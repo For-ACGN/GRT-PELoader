@@ -1,5 +1,5 @@
-#ifndef WINDOWS_H
-#define WINDOWS_H
+#ifndef WINDOWS_T_H
+#define WINDOWS_T_H
 
 #include "go_types.h"
 
@@ -73,4 +73,4 @@ typedef HANDLE(*CreateThread)
     uintptr lpParameter, uint32 dwCreationFlags, uint32* lpThreadId
 );
 
-#endif // WINDOWS_H
+#endif // WINDOWS_T_H
