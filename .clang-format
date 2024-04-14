@@ -1,16 +1,17 @@
 AccessModifierOffset: -4
 AlignAfterOpenBracket: DontAlign
+AlignConsecutiveDeclarations: true
 AllowShortBlocksOnASingleLine: false
 AllowShortFunctionsOnASingleLine: false
 BasedOnStyle: LLVM
 BraceWrapping:
-  AfterClass: false
-  AfterControlStatement: false
-  AfterEnum: false
-  AfterFunction: false
-  AfterNamespace: false
+  AfterClass: true
+  AfterControlStatement: true
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
   AfterStruct: false
-  AfterUnion: false
+  AfterUnion: true
   BeforeCatch: true
   BeforeElse: true
   IndentBraces: false
