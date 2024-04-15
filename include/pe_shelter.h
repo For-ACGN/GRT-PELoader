@@ -20,6 +20,6 @@ typedef struct {
     uint      NumHooks;
 } PEShelterCtx;
 
-uintptr LoadPE(PEShelterCtx *ctx, uintptr address, uint64 size);
+uintptr LoadPE(PEShelterCtx* context, uintptr address);
 
 #endif // PE_SHELTER_H
