@@ -21,10 +21,13 @@ typedef struct {
     // PE image information
     uintptr PEImage;
     uint32  PEOffset;
+    uint16  NumSections;
+    uint16  OptHeaderSize;
     uintptr EntryPoint;
     uintptr ImageBase;
     uint32  ImageSize;
 
+    uintptr Debug;
     // DLL
 } PEShelterRT;
 
@@ -65,9 +68,14 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
             break;
         }
         fixRelocationTable(&runtime);
+
+        // change memory protect to executable
+        uint32 oldProtect;
+        runtime.VirtualProtect(runtime.PEImage, runtime.ImageSize, PAGE_EXECUTE_READ, &oldProtect);
+
         break;
     }
-  
+
     // if (runtime.PEImage != NULL)
     // {
     // 
@@ -76,7 +84,7 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
     // {
     // 
     // }
-    return runtime.ImageSize;
+    return runtime.Debug;
 }
 
 // initAPI is used to find API addresses for PE loader.
@@ -155,10 +163,16 @@ static bool parsePEImage(PEShelterRT* runtime)
 {
     uintptr imageAddr = runtime->ImageAddr;
     uint32  peOffset = *(uint32*)(imageAddr + 60);
+    // parse FileHeader
+    uint16 numSections = *(uint16*)(imageAddr + peOffset + 6);
+    uint16 optHeaderSize = *(uint16*)(imageAddr + peOffset + 20);
+    // parse OptionalHeader
     uintptr entryPoint = *(uint32*)(imageAddr + peOffset + 40);
     uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 48);
     uint32  imageSize = *(uint32*)(imageAddr + peOffset + 80);
     runtime->PEOffset = peOffset;
+    runtime->NumSections = numSections;
+    runtime->OptHeaderSize = optHeaderSize;
     runtime->EntryPoint = entryPoint;
     runtime->ImageBase = imageBase;
     runtime->ImageSize = imageSize;
@@ -168,20 +182,33 @@ static bool parsePEImage(PEShelterRT* runtime)
 static bool mapPESections(PEShelterRT* runtime)
 {
     // allocate memory for PE image
-    uintptr peImage = runtime->VirtualAlloc(0, 123, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    uint32 imageSize = runtime->ImageSize;
+    uintptr peImage = runtime->VirtualAlloc(0, imageSize, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     if (peImage == NULL)
     {
         return false;
     }
-    // copy PE image to the memory
-    // copyMemory(peImage, address, size);
-    // change memory protect to executable
-    uint32 oldProtect;
-    if (!runtime->VirtualProtect(peImage, 123, PAGE_EXECUTE_READ, &oldProtect))
+    // map PE image sections to the memory
+    uintptr virtualAddress;
+    uint32  sizeOfRawData;
+    uint32  pointerToRawData;
+    uintptr dst;
+    uintptr src;
+    uintptr section = runtime->ImageAddr + runtime->PEOffset + 24 + runtime->OptHeaderSize;
+    for (uint i = 0; i < runtime->NumSections; i++)
     {
-        return false;
+        virtualAddress = *(uint32*)(section + 12);
+        sizeOfRawData = *(uint32*)(section + 16);
+        pointerToRawData = *(uint32*)(section + 20);
+
+        dst = peImage + virtualAddress;
+        src = runtime->ImageAddr + pointerToRawData;
+        copyMemory(dst, src, sizeOfRawData);
+
+        section += 40;
     }
     runtime->PEImage = peImage;
+    runtime->EntryPoint = peImage + runtime->EntryPoint;
     return true;
 }
 
@@ -190,8 +217,8 @@ static void fixRelocationTable(PEShelterRT* runtime)
     uintptr peImage = runtime->PEImage;
     uint32  peOffset = runtime->PEOffset;
 
-    uint32 tableSize = *(uintptr*)(peImage + peOffset + 180);
-    uint32 tableRVA  = *(uintptr*)(peImage + peOffset + 176);
+    uint32 tableSize = *(uint32*)(peImage + peOffset + 180);
+    uint32 tableRVA = *(uint32*)(peImage + peOffset + 176);
 
     runtime->PEOffset = tableSize;
 }
