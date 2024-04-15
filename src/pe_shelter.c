@@ -21,8 +21,9 @@ typedef struct {
     // PE image information
     uintptr PEImage;
     uint32  PEOffset;
+    uintptr EntryPoint;
     uintptr ImageBase;
-    uintptr EntryPointRVA;
+    uint32  ImageSize;
 
     // DLL
 } PEShelterRT;
@@ -75,7 +76,7 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
     // {
     // 
     // }
-    return runtime.PEOffset;
+    return runtime.ImageSize;
 }
 
 // initAPI is used to find API addresses for PE loader.
@@ -154,11 +155,13 @@ static bool parsePEImage(PEShelterRT* runtime)
 {
     uintptr imageAddr = runtime->ImageAddr;
     uint32  peOffset = *(uint32*)(imageAddr + 60);
+    uintptr entryPoint = *(uint32*)(imageAddr + peOffset + 40);
     uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 48);
-    uintptr entryPointRVA = *(uint32*)(imageAddr + peOffset + 40);
+    uint32  imageSize = *(uint32*)(imageAddr + peOffset + 80);
     runtime->PEOffset = peOffset;
+    runtime->EntryPoint = entryPoint;
     runtime->ImageBase = imageBase;
-    runtime->EntryPointRVA = entryPointRVA;
+    runtime->ImageSize = imageSize;
     return true;
 }
 
@@ -181,8 +184,6 @@ static bool mapPESections(PEShelterRT* runtime)
     runtime->PEImage = peImage;
     return true;
 }
-
-
 
 static void fixRelocationTable(PEShelterRT* runtime)
 {
