@@ -7,7 +7,7 @@
 #pragma comment(linker, "/ENTRY:EntryMain")
 uint EntryMain() 
 {
-    HANDLE hFile = CreateFileA("D:\\hash.exe", GENERIC_READ, 0, NULL, OPEN_ALWAYS, 0, NULL);
+    HANDLE hFile = CreateFileA("E:\\Temp\\hash.exe", GENERIC_READ, 0, NULL, OPEN_ALWAYS, 0, NULL);
     if (hFile == INVALID_HANDLE_VALUE)
     {
         return -1;
@@ -32,6 +32,6 @@ uint EntryMain()
         .Hooks    = NULL,
         .NumHooks = 1,
     };
-    uintptr entry = LoadPE(&context, (uintptr)lpAddress, dwSize);
+    uintptr entry = LoadPE(&context, (uintptr)lpAddress);
     return entry;
 }
