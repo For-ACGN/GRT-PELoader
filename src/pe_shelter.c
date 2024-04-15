@@ -1,5 +1,5 @@
 #include "go_types.h"
-#include "windows_c.h"
+#include "windows_t.h"
 #include "pe_shelter.h"
 
 typedef struct {
@@ -24,7 +24,7 @@ typedef struct {
     // DLL
 } PEShelterRT;
 
-static bool initializeAPI(PEShelterRT* runtime);
+static bool initAPI(PEShelterRT* runtime);
 static bool copyPEImage(PEShelterRT* runtime, uintptr address, uint64 size);
 static bool parsePEImage(PEShelterRT* runtime);
 static void fixRelocationTable(PEShelterRT* runtime);
@@ -45,7 +45,7 @@ uintptr LoadPE(PEShelterCtx* ctx, uintptr address, uint64 size)
         .CreateThread   = (CreateThread)1,
     };
 
-    if (!initializeAPI(&runtime))
+    if (!initAPI(&runtime))
     {
         return NULL;
     }
@@ -75,8 +75,8 @@ uintptr LoadPE(PEShelterCtx* ctx, uintptr address, uint64 size)
     return runtime.PEOffset;
 }
 
-// initializeAPI is used to find API addresses for PE loader.
-static bool initializeAPI(PEShelterRT* runtime)
+// initAPI is used to find API addresses for PE loader.
+static bool initAPI(PEShelterRT* runtime)
 {
     PEShelterCtx* ctx = runtime->ctx;
 
@@ -169,9 +169,10 @@ static bool copyPEImage(PEShelterRT* runtime, uintptr address, uint64 size)
 
 static bool parsePEImage(PEShelterRT* runtime)
 {
-    uint32  peOffset = *(uint32*)(runtime->PEImage + 60);
-    uintptr imageBase = *(uintptr*)(runtime->PEImage + peOffset + 48);
-    uintptr entryPointRVA = *(uint32*)(runtime->PEImage + peOffset + 40);
+    uintptr peImage = runtime->PEImage;
+    uint32  peOffset = *(uint32*)(peImage + 60);
+    uintptr imageBase = *(uintptr*)(peImage + peOffset + 48);
+    uintptr entryPointRVA = *(uint32*)(peImage + peOffset + 40);
     runtime->PEOffset = peOffset;
     runtime->ImageBase = imageBase;
     runtime->EntryPointRVA = entryPointRVA;
@@ -180,7 +181,13 @@ static bool parsePEImage(PEShelterRT* runtime)
 
 static void fixRelocationTable(PEShelterRT* runtime)
 {
+    uintptr peImage = runtime->PEImage;
+    uint32  peOffset = runtime->PEOffset;
 
+    uint32 tableSize = *(uintptr*)(peImage + peOffset + 180);
+    uint32 tableRVA  = *(uintptr*)(peImage + peOffset + 176);
+
+    runtime->PEOffset = tableSize;
 }
 
 // copyMemory is used to copy source memory data to the destination.
