@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <windows.h>
 
 #include "go_types.h"
@@ -15,7 +14,6 @@ uint EntryMain()
     }
     DWORD dwSize;
     dwSize = GetFileSize(hFile, 0);
-
     LPVOID lpAddress = VirtualAlloc(NULL, dwSize, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
     if (lpAddress == NULL)
     {
@@ -29,12 +27,11 @@ uint EntryMain()
         return -1;
     }
 
-
     PEShelterCtx context = {
         .FindAPI  = FindAPI,
         .Hooks    = NULL,
         .NumHooks = 1,
     };
-    uintptr entry = LoadPE(&context, lpAddress, dwSize);
+    uintptr entry = LoadPE(&context, (uintptr)lpAddress, dwSize);
     return entry;
 }
