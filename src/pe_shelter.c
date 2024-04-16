@@ -28,7 +28,7 @@ typedef struct {
     uint32  PEOffset;
     uint16  NumSections;
     uint16  OptHeaderSize;
-    uint16  DataDir;
+    uintptr DataDir;
     uintptr EntryPoint;
     uintptr ImageBase;
     uint32  ImageSize;
@@ -37,6 +37,14 @@ typedef struct {
 
     uintptr Debug;
 } PEShelterRT;
+
+static struct ImportDirectory {
+    uint32 OriginalFirstThunk;
+    uint32 TimeDateStamp;
+    uint32 ForwarderChain;
+    uint32 Name;
+    uint32 FirstThunk;
+};
 
 static bool initAPI(PEShelterRT* runtime);
 static bool parsePEImage(PEShelterRT* runtime);
@@ -236,13 +244,18 @@ static bool fixRelocTable(PEShelterRT* runtime)
 
 static bool processIAT(PEShelterRT* runtime)
 {
-    uint16  dataDir = runtime->DataDir;
-    uint32  itVA = *(uint32*)(dataDir + 1 * DATA_DIRECTORY_Size);
-    uint32  itSize = *(uint32*)(dataDir + 1 * DATA_DIRECTORY_Size + 4);
+    uintptr peImage = runtime->PEImage;
+    uintptr dataDir = runtime->DataDir;
+    uint32  importTableVA = *(uint32*)(dataDir + 1 * DATA_DIRECTORY_Size);
+    struct ImportDirectory* importDir;
+    importDir = (struct ImportDirectory*)(peImage + importTableVA);
 
 
+    uintptr name = peImage + importDir->Name;
+    HANDLE hModule = runtime->LoadLibraryA(name);
 
-    runtime->Debug = itVA;
+
+    runtime->Debug = hModule;
     return true;
 }
 
