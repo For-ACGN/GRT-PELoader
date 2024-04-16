@@ -2,6 +2,11 @@
 #include "windows_t.h"
 #include "pe_shelter.h"
 
+#define PE_HEADER_SIZE 24
+#define PE_OPT_HEADER_64_SIZE 240
+#define PE_OPT_HEADER_32_SIZE 224
+#define DATA_DIRECTORY_Size 8
+
 typedef struct {
     PEShelterCtx* context;
 
@@ -23,6 +28,7 @@ typedef struct {
     uint32  PEOffset;
     uint16  NumSections;
     uint16  OptHeaderSize;
+    uint16  DataDir;
     uintptr EntryPoint;
     uintptr ImageBase;
     uint32  ImageSize;
@@ -175,13 +181,15 @@ static bool parsePEImage(PEShelterRT* runtime)
     uint16 numSections = *(uint16*)(imageAddr + peOffset + 6);
     uint16 optHeaderSize = *(uint16*)(imageAddr + peOffset + 20);
     // parse OptionalHeader
+    uint16  ddOffset = PE_OPT_HEADER_64_SIZE - 16 * DATA_DIRECTORY_Size;
+    uintptr dataDir = imageAddr + peOffset + PE_HEADER_SIZE + ddOffset;
     uint32  entryPoint = *(uint32*)(imageAddr + peOffset + 40);
     uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 48);
     uint32  imageSize = *(uint32*)(imageAddr + peOffset + 80);
-
     runtime->PEOffset = peOffset;
     runtime->NumSections = numSections;
     runtime->OptHeaderSize = optHeaderSize;
+    runtime->DataDir = dataDir;
     runtime->EntryPoint = entryPoint;
     runtime->ImageBase = imageBase;
     runtime->ImageSize = imageSize;
@@ -198,7 +206,10 @@ static bool mapPESections(PEShelterRT* runtime)
         return false;
     }
     // map PE image sections to the memory
-    uintptr section = runtime->ImageAddr + runtime->PEOffset + 24 + runtime->OptHeaderSize;
+    uintptr imageAddr = runtime->ImageAddr;
+    uint32  peOffset = runtime->PEOffset;
+    uint16  optHeaderSize = runtime->OptHeaderSize;
+    uintptr section = imageAddr + peOffset + PE_HEADER_SIZE + optHeaderSize;
     for (uint16 i = 0; i < runtime->NumSections; i++)
     {
         uint32 virtualAddress = *(uint32*)(section + 12);
@@ -225,7 +236,13 @@ static bool fixRelocTable(PEShelterRT* runtime)
 
 static bool processIAT(PEShelterRT* runtime)
 {
+    uint16  dataDir = runtime->DataDir;
+    uint32  itVA = *(uint32*)(dataDir + 1 * DATA_DIRECTORY_Size);
+    uint32  itSize = *(uint32*)(dataDir + 1 * DATA_DIRECTORY_Size + 4);
 
+
+
+    runtime->Debug = itVA;
     return true;
 }
 
