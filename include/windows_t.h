@@ -35,8 +35,9 @@ typedef uint    HANDLE;
 #define PE_HEADER_SIZE 24
 #define PE_OPT_HEADER_64_SIZE 240
 #define PE_OPT_HEADER_32_SIZE 224
+#define PE_SECTION_HEADER_SIZE 40
 #define PE_DATA_DIRECTORY_SIZE 8
-#define PE_ImportDirectory_SIZE 20
+#define PE_IMPORT_DIRECTORY_SIZE 20
 
 typedef struct {
     uint32 OriginalFirstThunk;
