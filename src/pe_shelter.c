@@ -84,19 +84,12 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
 
 
         // runtime.Debug = runtime.CreateThread(0, 0, runtime.EntryPoint, 0, 0, 0);
-        // typedef uint32 (*testFn)();
-
-        // testFn fn = (test123)(runtime.EntryPoint);
-        // return fn();
-
-
+        typedef uint32 (*testFn)();
+        testFn fn = (testFn)(runtime.EntryPoint);
+        return fn();
 
         break;
     }
-    
-  
-
-
 
     // if (runtime.PEImage != NULL)
     // {
@@ -189,7 +182,7 @@ static bool parsePEImage(PEShelterRT* runtime)
     uint16 numSections = *(uint16*)(imageAddr + peOffset + 6);
     uint16 optHeaderSize = *(uint16*)(imageAddr + peOffset + 20);
     // parse OptionalHeader
-    uint16  ddOffset = PE_OPT_HEADER_64_SIZE - 16*PE_DATA_DIRECTORY_SIZE;
+    uint16  ddOffset = PE_OPT_HEADER_SIZE_64 - 16*PE_DATA_DIRECTORY_SIZE;
     uintptr dataDir = imageAddr + peOffset + PE_HEADER_SIZE + ddOffset;
     uint32  entryPoint = *(uint32*)(imageAddr + peOffset + 40);
     uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 48);
@@ -269,8 +262,8 @@ static bool processIAT(PEShelterRT* runtime)
         {
             break;
         }
-        LPCSTR name = (LPCSTR)(peImage + importDir->Name);
-        HMODULE hModule = runtime->LoadLibraryA(name);
+        LPCSTR dllName = (LPCSTR)(peImage + importDir->Name);
+        HMODULE hModule = runtime->LoadLibraryA(dllName);
         if (hModule == NULL)
         {
             // TODO release loaded library
@@ -287,11 +280,18 @@ static bool processIAT(PEShelterRT* runtime)
         dThunk = peImage + importDir->FirstThunk;
         for (;;)
         {
-            if (*(uintptr*)sThunk == 0)
+            uintptr value = *(uintptr*)sThunk;
+            if (value == 0)
             {
                 break;
             }
-            LPCSTR procName = (LPCSTR)(peImage + *(uintptr*)sThunk + 2);
+            LPCSTR procName;
+            if ((value&IMAGE_ORDINAL_FLAG64) != 0)
+            {
+                procName = (LPCSTR)(value&0xFFFF);
+            } else {
+                procName = (LPCSTR)(peImage + value + 2);
+            }
             uintptr proc = runtime->GetProcAddress(hModule, procName);
             if (proc == NULL)
             {
