@@ -79,11 +79,25 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
         }
         // change memory protect to executable
         uint32 oldProtect;
-        runtime.VirtualProtect(runtime.PEImage, runtime.ImageSize, PAGE_EXECUTE_READ, &oldProtect);
-        // runtime->EntryPoint = peImage + runtime->EntryPoint;
+        runtime.VirtualProtect(runtime.PEImage, runtime.ImageSize, PAGE_EXECUTE_READWRITE, &oldProtect);
+        runtime.EntryPoint = runtime.PEImage + runtime.EntryPoint;
+
+
+        // runtime.Debug = runtime.CreateThread(0, 0, runtime.EntryPoint, 0, 0, 0);
+        // typedef uint32 (*testFn)();
+
+        // testFn fn = (test123)(runtime.EntryPoint);
+        // return fn();
+
+
+
         break;
     }
     
+  
+
+
+
     // if (runtime.PEImage != NULL)
     // {
     // 
@@ -212,7 +226,7 @@ static bool mapPESections(PEShelterRT* runtime)
         uintptr dst = peImage + virtualAddress;
         uintptr src = runtime->ImageAddr + pointerToRawData;
         copyMemory(dst, src, sizeOfRawData);
-        section += 40;
+        section += PE_SECTION_HEADER_SIZE;
     }
     runtime->PEImage = peImage;
     return true;
@@ -233,7 +247,6 @@ static bool processIAT(PEShelterRT* runtime)
     uintptr peImage = runtime->PEImage;
     uintptr dataDir = runtime->DataDir;
     uintptr importTable = peImage + *(uint32*)(dataDir + 1*PE_DATA_DIRECTORY_SIZE);
-    
     // calculate the number of the library
     uintptr table = importTable;
     uint32  numDLL = 0;
@@ -245,9 +258,8 @@ static bool processIAT(PEShelterRT* runtime)
             break;
         }
         numDLL++;
-        table += PE_ImportDirectory_SIZE;
+        table += PE_IMPORT_DIRECTORY_SIZE;
     }
-
     // load library and fix function address
     table = importTable;
     for (;;)
@@ -264,13 +276,33 @@ static bool processIAT(PEShelterRT* runtime)
             // TODO release loaded library
             return false;
         }
-
-
-
-        runtime->Debug = hModule;
-        table += PE_ImportDirectory_SIZE;
+        uintptr sThunk;
+        uintptr dThunk;
+        if (importDir->OriginalFirstThunk != 0)
+        {
+            sThunk = peImage + importDir->OriginalFirstThunk;
+        } else {
+            sThunk = peImage + importDir->FirstThunk;
+        }
+        dThunk = peImage + importDir->FirstThunk;
+        for (;;)
+        {
+            if (*(uintptr*)sThunk == 0)
+            {
+                break;
+            }
+            LPCSTR procName = (LPCSTR)(peImage + *(uintptr*)sThunk + 2);
+            uintptr proc = runtime->GetProcAddress(hModule, procName);
+            if (proc == NULL)
+            {
+                return false;
+            }
+            *(uintptr*)dThunk = proc;
+            sThunk += sizeof(uintptr);
+            dThunk += sizeof(uintptr);
+        }
+        table += PE_IMPORT_DIRECTORY_SIZE;
     }
-
     runtime->ImportTable = importTable;
     return true;
 }
