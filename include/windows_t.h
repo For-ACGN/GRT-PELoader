@@ -32,6 +32,20 @@ typedef uint    HANDLE;
 #define PAGE_EXECUTE_READWRITE 0x40
 #define PAGE_EXECUTE_WRITECOPY 0x80
 
+#define PE_HEADER_SIZE 24
+#define PE_OPT_HEADER_64_SIZE 240
+#define PE_OPT_HEADER_32_SIZE 224
+#define PE_DATA_DIRECTORY_SIZE 8
+#define PE_ImportDirectory_SIZE 20
+
+typedef struct {
+    uint32 OriginalFirstThunk;
+    uint32 TimeDateStamp;
+    uint32 ForwarderChain;
+    uint32 Name;
+    uint32 FirstThunk;
+} PE_ImportDirectory;
+
 typedef uintptr (*VirtualAlloc)
 (
     uintptr lpAddress, uint dwSize, uint32 flAllocationType, uint32 flProtect
