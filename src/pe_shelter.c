@@ -38,14 +38,6 @@ typedef struct {
     uintptr Debug;
 } PEShelterRT;
 
-static struct ImportDirectory {
-    uint32 OriginalFirstThunk;
-    uint32 TimeDateStamp;
-    uint32 ForwarderChain;
-    uint32 Name;
-    uint32 FirstThunk;
-};
-
 static bool initAPI(PEShelterRT* runtime);
 static bool parsePEImage(PEShelterRT* runtime);
 static bool mapPESections(PEShelterRT* runtime);
@@ -244,18 +236,36 @@ static bool fixRelocTable(PEShelterRT* runtime)
 
 static bool processIAT(PEShelterRT* runtime)
 {
+    typedef struct {
+        uint32 OriginalFirstThunk;
+        uint32 TimeDateStamp;
+        uint32 ForwarderChain;
+        uint32 Name;
+        uint32 FirstThunk;
+    } ImportDirectory;
+
     uintptr peImage = runtime->PEImage;
     uintptr dataDir = runtime->DataDir;
-    uint32  importTableVA = *(uint32*)(dataDir + 1 * DATA_DIRECTORY_Size);
-    struct ImportDirectory* importDir;
-    importDir = (struct ImportDirectory*)(peImage + importTableVA);
+    uintptr importTable = peImage + * (uint32*)(dataDir + 1 * DATA_DIRECTORY_Size);
+
+    // calculate the number of the library.
+    ImportDirectory* importDir;
+    uint32 numDLL = 0;
+    for (;;)
+    {
+        importDir = (ImportDirectory*)(importTable + numDLL*20);
+        if (*(uint32*)(peImage + importDir->Name) == 0)
+        {
+            break;
+        }
+        numDLL++;
+    }
+
+    // HMODULE hModule = runtime->LoadLibraryA(name);
 
 
-    uintptr name = peImage + importDir->Name;
-    HANDLE hModule = runtime->LoadLibraryA(name);
 
-
-    runtime->Debug = hModule;
+    runtime->Debug = numDLL;
     return true;
 }
 
