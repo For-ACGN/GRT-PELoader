@@ -2,11 +2,6 @@
 #include "windows_t.h"
 #include "pe_shelter.h"
 
-#define PE_HEADER_SIZE 24
-#define PE_OPT_HEADER_64_SIZE 240
-#define PE_OPT_HEADER_32_SIZE 224
-#define DATA_DIRECTORY_Size 8
-
 typedef struct {
     PEShelterCtx* context;
 
@@ -32,8 +27,7 @@ typedef struct {
     uintptr EntryPoint;
     uintptr ImageBase;
     uint32  ImageSize;
-
-    // DLL
+    uintptr ImportTable;
 
     uintptr Debug;
 } PEShelterRT;
@@ -181,7 +175,7 @@ static bool parsePEImage(PEShelterRT* runtime)
     uint16 numSections = *(uint16*)(imageAddr + peOffset + 6);
     uint16 optHeaderSize = *(uint16*)(imageAddr + peOffset + 20);
     // parse OptionalHeader
-    uint16  ddOffset = PE_OPT_HEADER_64_SIZE - 16 * DATA_DIRECTORY_Size;
+    uint16  ddOffset = PE_OPT_HEADER_64_SIZE - 16*PE_DATA_DIRECTORY_SIZE;
     uintptr dataDir = imageAddr + peOffset + PE_HEADER_SIZE + ddOffset;
     uint32  entryPoint = *(uint32*)(imageAddr + peOffset + 40);
     uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 48);
@@ -236,47 +230,57 @@ static bool fixRelocTable(PEShelterRT* runtime)
 
 static bool processIAT(PEShelterRT* runtime)
 {
-    typedef struct {
-        uint32 OriginalFirstThunk;
-        uint32 TimeDateStamp;
-        uint32 ForwarderChain;
-        uint32 Name;
-        uint32 FirstThunk;
-    } ImportDirectory;
-
     uintptr peImage = runtime->PEImage;
     uintptr dataDir = runtime->DataDir;
-    uintptr importTable = peImage + * (uint32*)(dataDir + 1 * DATA_DIRECTORY_Size);
-
-    // calculate the number of the library.
-    ImportDirectory* importDir;
-    uint32 numDLL = 0;
+    uintptr importTable = peImage + *(uint32*)(dataDir + 1*PE_DATA_DIRECTORY_SIZE);
+    
+    // calculate the number of the library
+    uintptr table = importTable;
+    uint32  numDLL = 0;
     for (;;)
     {
-        importDir = (ImportDirectory*)(importTable + numDLL*20);
-        if (*(uint32*)(peImage + importDir->Name) == 0)
+        PE_ImportDirectory* importDir = (PE_ImportDirectory*)(table);
+        if (importDir->Name == 0)
         {
             break;
         }
         numDLL++;
+        table += PE_ImportDirectory_SIZE;
     }
 
-    // HMODULE hModule = runtime->LoadLibraryA(name);
+    // load library and fix function address
+    table = importTable;
+    for (;;)
+    {
+        PE_ImportDirectory* importDir = (PE_ImportDirectory*)(table);
+        if (importDir->Name == 0)
+        {
+            break;
+        }
+        LPCSTR name = (LPCSTR)(peImage + importDir->Name);
+        HMODULE hModule = runtime->LoadLibraryA(name);
+        if (hModule == NULL)
+        {
+            // TODO release loaded library
+            return false;
+        }
 
 
 
-    runtime->Debug = numDLL;
+        runtime->Debug = hModule;
+        table += PE_ImportDirectory_SIZE;
+    }
+
+    runtime->ImportTable = importTable;
     return true;
 }
 
 // copyMemory is used to copy source memory data to the destination.
-// It will wipe data at the source address.
 static void copyMemory(uintptr dst, uintptr src, uint size)
 {
     for (uintptr i = 0; i < size; i++)
     {
         *(byte*)(dst + i) = *(byte*)(src + i);
-        *(byte*)(src + i) = 0;
     }
 }
 
