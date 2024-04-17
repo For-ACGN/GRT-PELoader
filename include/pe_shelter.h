@@ -16,8 +16,8 @@ typedef struct {
 
 typedef struct {
 	FindAPI_t FindAPI;
-    Hook      (*Hooks)[];
     uint      NumHooks;
+    Hook      (*Hooks)[];
 } PEShelterCtx;
 
 uintptr LoadPE(PEShelterCtx* context, uintptr address);
