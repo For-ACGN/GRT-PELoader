@@ -230,7 +230,50 @@ static bool fixRelocTable(PEShelterRT* runtime)
 {
     uintptr peImage = runtime->PEImage;
     uintptr dataDir = runtime->DataDir;
-   
+    uintptr relocTable = peImage + *(uint32*)(dataDir + 5 * PE_DATA_DIRECTORY_SIZE);
+    uint32  tableSize = *(uint32*)(dataDir + 5 * PE_DATA_DIRECTORY_SIZE + 4);
+    uint64  addressOffset = (int64)(runtime->PEImage) - (int64)(runtime->ImageBase);
+    // check need relocation
+    if (tableSize == 0)
+    {
+        return true;
+    }
+    PE_ImageBaseRelocation* baseReloc;
+    for (;;)
+    {
+        baseReloc = (PE_ImageBaseRelocation*)(relocTable);
+        if (baseReloc->VirtualAddress == 0)
+        {
+            break;
+        }
+        uintptr infoPtr = relocTable + 8;
+        uintptr dstAddr = peImage + baseReloc->VirtualAddress;
+        for (uint32 i = 0; i < (baseReloc->SizeOfBlock - 8) / 2; i++)
+        {
+            uint16  info = *(uint16*)(infoPtr);
+            uint16  type = info >> 12;
+            uint16  offset = info & 0xFFF;
+            uint32* patchAddr32;
+            uint64* patchAddr64;
+            switch (type)
+            {
+            case IMAGE_REL_BASED_ABSOLUTE:
+                break;
+            case IMAGE_REL_BASED_HIGHLOW:
+                patchAddr32 = (uint32*)(dstAddr + offset);
+                *patchAddr32 = (uint32)(addressOffset);
+                break;
+            case IMAGE_REL_BASED_DIR64:
+                patchAddr64 = (uint64*)(dstAddr + offset);
+                *patchAddr64 = (uint64)(addressOffset);
+                break;
+            default:
+                return false;
+            }
+            infoPtr += 2;
+        }
+        relocTable += baseReloc->SizeOfBlock;
+    }
     return true;
 }
 
