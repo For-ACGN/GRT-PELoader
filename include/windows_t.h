@@ -33,11 +33,23 @@ typedef uint    HANDLE;
 #define PAGE_EXECUTE_WRITECOPY 0x80
 
 #define PE_HEADER_SIZE 24
-#define PE_OPT_HEADER_64_SIZE 240
-#define PE_OPT_HEADER_32_SIZE 224
+#define PE_OPT_HEADER_SIZE_64 240
+#define PE_OPT_HEADER_SIZE_32 224
 #define PE_SECTION_HEADER_SIZE 40
 #define PE_DATA_DIRECTORY_SIZE 8
 #define PE_IMPORT_DIRECTORY_SIZE 20
+
+#define IMAGE_ORDINAL_FLAG64 0x8000000000000000
+#define IMAGE_ORDINAL_FLAG32 0x80000000
+
+#define IMAGE_REL_BASED_ABSOLUTE 0
+#define IMAGE_REL_BASED_HIGHLOW  3 
+#define IMAGE_REL_BASED_DIR64    10
+
+typedef struct {
+    uint32 VirtualAddress;
+    uint32 SizeOfBlock;
+} PE_ImageBaseRelocation;
 
 typedef struct {
     uint32 OriginalFirstThunk;
