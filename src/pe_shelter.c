@@ -82,12 +82,17 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
         runtime.VirtualProtect(runtime.PEImage, runtime.ImageSize, PAGE_EXECUTE_READWRITE, &oldProtect);
         runtime.EntryPoint = runtime.PEImage + runtime.EntryPoint;
 
+        // runtime.FlushInstCache(18446744073709551615, runtime.PEImage, runtime.ImageSize);
 
-        // runtime.Debug = 1;
-        runtime.Debug = runtime.CreateThread(0, 0, runtime.EntryPoint, 0, 0, 0);
-         // typedef uint32 (*testFn)();
-         // testFn fn = (testFn)(runtime.EntryPoint);
-         // fn();
+
+       //  return runtime.Debug;
+
+        // runtime.Debug = runtime.CreateThread(0, 0, runtime.EntryPoint, 0, 0, 0);
+         typedef uint32 (*testFn)();
+         testFn fn = (testFn)(runtime.EntryPoint);
+         fn();
+
+        
 
         break;
     }
@@ -100,7 +105,7 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
     // {
     // 
     // }
-    return runtime.Debug;
+    return 1;
 }
 
 // initAPI is used to find API addresses for PE loader.
@@ -230,8 +235,8 @@ static bool fixRelocTable(PEShelterRT* runtime)
 {
     uintptr peImage = runtime->PEImage;
     uintptr dataDir = runtime->DataDir;
-    uintptr relocTable = peImage + *(uint32*)(dataDir + 5 * PE_DATA_DIRECTORY_SIZE);
-    uint32  tableSize = *(uint32*)(dataDir + 5 * PE_DATA_DIRECTORY_SIZE + 4);
+    uintptr relocTable = peImage + *(uint32*)(dataDir + 5*PE_DATA_DIRECTORY_SIZE);
+    uint32  tableSize = *(uint32*)(dataDir + 5*PE_DATA_DIRECTORY_SIZE + 4);
     uint64  addressOffset = (int64)(runtime->PEImage) - (int64)(runtime->ImageBase);
     // check need relocation
     if (tableSize == 0)
@@ -261,11 +266,11 @@ static bool fixRelocTable(PEShelterRT* runtime)
                 break;
             case IMAGE_REL_BASED_HIGHLOW:
                 patchAddr32 = (uint32*)(dstAddr + offset);
-                *patchAddr32 = (uint32)(addressOffset);
+                *patchAddr32 += (uint32)(addressOffset);
                 break;
             case IMAGE_REL_BASED_DIR64:
                 patchAddr64 = (uint64*)(dstAddr + offset);
-                *patchAddr64 = (uint64)(addressOffset);
+                *patchAddr64 += (uint64)(addressOffset);
                 break;
             default:
                 return false;
