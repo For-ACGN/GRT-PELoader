@@ -83,10 +83,11 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
         runtime.EntryPoint = runtime.PEImage + runtime.EntryPoint;
 
 
-        // runtime.Debug = runtime.CreateThread(0, 0, runtime.EntryPoint, 0, 0, 0);
-        typedef uint32 (*testFn)();
-        testFn fn = (testFn)(runtime.EntryPoint);
-        return fn();
+        // runtime.Debug = 1;
+        runtime.Debug = runtime.CreateThread(0, 0, runtime.EntryPoint, 0, 0, 0);
+         // typedef uint32 (*testFn)();
+         // testFn fn = (testFn)(runtime.EntryPoint);
+         // fn();
 
         break;
     }
@@ -228,10 +229,8 @@ static bool mapPESections(PEShelterRT* runtime)
 static bool fixRelocTable(PEShelterRT* runtime)
 {
     uintptr peImage = runtime->PEImage;
-    uint32  peOffset = runtime->PEOffset;
-    uint32 tableSize = *(uint32*)(peImage + peOffset + 180);
-    uint32 tableRVA = *(uint32*)(peImage + peOffset + 176);
-
+    uintptr dataDir = runtime->DataDir;
+   
     return true;
 }
 
@@ -241,11 +240,12 @@ static bool processIAT(PEShelterRT* runtime)
     uintptr dataDir = runtime->DataDir;
     uintptr importTable = peImage + *(uint32*)(dataDir + 1*PE_DATA_DIRECTORY_SIZE);
     // calculate the number of the library
+    PE_ImportDirectory* importDir;
     uintptr table = importTable;
     uint32  numDLL = 0;
     for (;;)
     {
-        PE_ImportDirectory* importDir = (PE_ImportDirectory*)(table);
+        importDir = (PE_ImportDirectory*)(table);
         if (importDir->Name == 0)
         {
             break;
@@ -257,7 +257,7 @@ static bool processIAT(PEShelterRT* runtime)
     table = importTable;
     for (;;)
     {
-        PE_ImportDirectory* importDir = (PE_ImportDirectory*)(table);
+        importDir = (PE_ImportDirectory*)(table);
         if (importDir->Name == 0)
         {
             break;
@@ -269,18 +269,19 @@ static bool processIAT(PEShelterRT* runtime)
             // TODO release loaded library
             return false;
         }
-        uintptr sThunk;
-        uintptr dThunk;
+        uintptr srcThunk;
+        uintptr dstThunk;
         if (importDir->OriginalFirstThunk != 0)
         {
-            sThunk = peImage + importDir->OriginalFirstThunk;
+            srcThunk = peImage + importDir->OriginalFirstThunk;
         } else {
-            sThunk = peImage + importDir->FirstThunk;
+            srcThunk = peImage + importDir->FirstThunk;
         }
-        dThunk = peImage + importDir->FirstThunk;
+        dstThunk = peImage + importDir->FirstThunk;
+        // fix function address
         for (;;)
         {
-            uintptr value = *(uintptr*)sThunk;
+            uintptr value = *(uintptr*)srcThunk;
             if (value == 0)
             {
                 break;
@@ -297,9 +298,9 @@ static bool processIAT(PEShelterRT* runtime)
             {
                 return false;
             }
-            *(uintptr*)dThunk = proc;
-            sThunk += sizeof(uintptr);
-            dThunk += sizeof(uintptr);
+            *(uintptr*)dstThunk = proc;
+            srcThunk += sizeof(uintptr);
+            dstThunk += sizeof(uintptr);
         }
         table += PE_IMPORT_DIRECTORY_SIZE;
     }
