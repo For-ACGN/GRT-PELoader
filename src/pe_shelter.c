@@ -10,8 +10,8 @@ typedef struct {
 
     // API address
     VirtualAlloc   VirtualAlloc;
-    VirtualProtect VirtualProtect;
     VirtualFree    VirtualFree;
+    VirtualProtect VirtualProtect;
     LoadLibraryA   LoadLibraryA;
     FreeLibrary    FreeLibrary;
     GetProcAddress GetProcAddress;
@@ -47,8 +47,8 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
 
         // ignore Visual Studio bug fix
         .VirtualAlloc   = (VirtualAlloc)1,
-        .VirtualProtect = (VirtualProtect)1,
         .VirtualFree    = (VirtualFree)1,
+        .VirtualProtect = (VirtualProtect)1,
         .LoadLibraryA   = (LoadLibraryA)1,
         .FreeLibrary    = (FreeLibrary)1,
         .GetProcAddress = (GetProcAddress)1,
@@ -82,15 +82,15 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
         runtime.VirtualProtect(runtime.PEImage, runtime.ImageSize, PAGE_EXECUTE_READWRITE, &oldProtect);
         runtime.EntryPoint = runtime.PEImage + runtime.EntryPoint;
 
-        // runtime.FlushInstCache(18446744073709551615, runtime.PEImage, runtime.ImageSize);
+        runtime.Debug = runtime.FlushInstCache(-1, runtime.PEImage, runtime.ImageSize);
 
 
        //  return runtime.Debug;
 
         // runtime.Debug = runtime.CreateThread(0, 0, runtime.EntryPoint, 0, 0, 0);
-         typedef uint32 (*testFn)();
-         testFn fn = (testFn)(runtime.EntryPoint);
-         fn();
+         // typedef uint32 (*testFn)();
+         // testFn fn = (testFn)(runtime.EntryPoint);
+         // fn();
 
         
 
@@ -105,7 +105,7 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
     // {
     // 
     // }
-    return 1;
+    return runtime.Debug;
 }
 
 // initAPI is used to find API addresses for PE loader.
@@ -113,57 +113,97 @@ static bool initAPI(PEShelterRT* runtime)
 {
     FindAPI_t findAPI = runtime->context->FindAPI;
 
+    #ifdef _WIN64
     uint64 hash = 0xB6A1D0D4A275D4B6;
     uint64 key  = 0x64CB4D66EC0BEFD9;
+    #elif _WIN32
+    uint32 hash = 0xC3DE112E;
+    uint32 key  = 0x8D9EA74F;
+    #endif
     VirtualAlloc virtualAlloc = (VirtualAlloc)findAPI(hash, key);
     if (virtualAlloc == NULL)
     {
         return false;
     }
-    hash = 0x8CDC3CBC1ABF3F5F;
-    key  = 0xC3AEEDC9843D7B34;
-    VirtualProtect virtualProtect = (VirtualProtect)findAPI(hash, key);
-    if (virtualProtect == NULL)
-    {
-        return false;
-    }
+    #ifdef _WIN64
     hash = 0xB82F958E3932DE49;
     key  = 0x1CA95AA0C4E69F35;
+    #elif _WIN32
+    uint32 hash = 0xFE192059;
+    uint32 key  = 0x397FD02C;
+    #endif
     VirtualFree virtualFree = (VirtualFree)findAPI(hash, key);
     if (virtualFree == NULL)
     {
         return false;
     }
+    #ifdef _WIN64
+    hash = 0x8CDC3CBC1ABF3F5F;
+    key = 0xC3AEEDC9843D7B34;
+    #elif _WIN32
+    uint32 hash = 0xD41DCE2B;
+    uint32 key = 0xEB37C512;
+    #endif
+    VirtualProtect virtualProtect = (VirtualProtect)findAPI(hash, key);
+    if (virtualProtect == NULL)
+    {
+        return false;
+    }
+    #ifdef _WIN64
     hash = 0xC0B89BE712EE4C18;
     key  = 0xF80CA8B02538CAC4;
+    #elif _WIN32
+    hash = 0xCCB2E46E;
+    key  = 0xAEB5A665;
+    #endif
     LoadLibraryA loadLibraryA = (LoadLibraryA)findAPI(hash, key);
     if (loadLibraryA == NULL)
     {
         return false;
     }
+    #ifdef _WIN64
     hash = 0xC22B47E9D652D287;
     key  = 0xA118770E82EB0797;
+    #elif _WIN32
+    hash = 0x2C1F810D;
+    key  = 0xCB356B02;
+    #endif
     FreeLibrary freeLibrary = (FreeLibrary)findAPI(hash, key);
     if (freeLibrary == NULL)
     {
         return false;
     }
+    #ifdef _WIN64
     hash = 0xB1AE911EA1306CE1;
     key  = 0x39A9670E629C64EA;
+    #elif _WIN32
+    hash = 0x5B4DC502;
+    key  = 0xC2CC2C19;
+    #endif
     GetProcAddress getProcAddress = (GetProcAddress)findAPI(hash, key);
     if (getProcAddress == NULL)
     {
         return false;
     }
+    #ifdef _WIN64
     hash = 0x8172B49F66E495BA;
     key  = 0x8F0D0796223B56C2;
+    #elif _WIN32
+    hash = 0x07783159;
+    key  = 0xF0EB8818;
+    #endif
     FlushInstCache flushInstCache = (FlushInstCache)findAPI(hash, key);
     if (flushInstCache == NULL)
     {
         return false;
     }
+    #ifdef _WIN64
     hash = 0x134459F9F9668FC1;
     key  = 0xB2877C84F94DB5D8;
+    #elif _WIN32
+    hash = 0x8DF47CDE;
+    key  = 0x17656962;
+    #endif
     CreateThread createThread = (CreateThread)findAPI(hash, key);
     if (createThread == NULL)
     {
