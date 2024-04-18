@@ -29,6 +29,8 @@ typedef struct {
     uint32  ImageSize;
     uintptr ImportTable;
 
+    uint ExitCode;
+
     uintptr Debug;
 } PEShelterRT;
 
@@ -37,6 +39,7 @@ static bool parsePEImage(PEShelterRT* runtime);
 static bool mapPESections(PEShelterRT* runtime);
 static bool fixRelocTable(PEShelterRT* runtime);
 static bool processIAT(PEShelterRT* runtime);
+static bool callEntryPoint(PEShelterRT* runtime);
 static void copyMemory(uintptr dst, uintptr src, uint len);
 
 uintptr LoadPE(PEShelterCtx* context, uintptr address)
@@ -77,26 +80,10 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
         {
             break;
         }
-        // change memory protect to executable
-        uint32 oldProtect;
-        runtime.VirtualProtect(runtime.PEImage, runtime.ImageSize, PAGE_EXECUTE_READWRITE, &oldProtect);
-        runtime.EntryPoint = runtime.PEImage + runtime.EntryPoint;
-
-        runtime.Debug = runtime.FlushInstCache(-1, runtime.PEImage, runtime.ImageSize);
-
-
-       //  return runtime.Debug;
-
-        // runtime.Debug = runtime.CreateThread(0, 0, runtime.EntryPoint, 0, 0, 0);
-         // typedef uint32 (*testFn)();
-         // testFn fn = (testFn)(runtime.EntryPoint);
-         // fn();
-
-        
+        callEntryPoint(&runtime);
 
         break;
     }
-
     // if (runtime.PEImage != NULL)
     // {
     // 
@@ -105,6 +92,7 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
     // {
     // 
     // }
+    // return runtime.ExitCode;
     return runtime.Debug;
 }
 
@@ -393,6 +381,26 @@ static bool processIAT(PEShelterRT* runtime)
         table += PE_IMPORT_DIRECTORY_SIZE;
     }
     runtime->ImportTable = importTable;
+    return true;
+}
+
+static bool callEntryPoint(PEShelterRT* runtime)
+{
+    uintptr peImage    = runtime->PEImage;
+    uint32  imageSize  = runtime->ImageSize;
+    uintptr entryPoint = runtime->EntryPoint;
+    // change image memory protect for execute
+    uint32 oldProtect;
+    if (!runtime->VirtualProtect(peImage, imageSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+    {
+        return false;
+    }
+    // flushd instruction cache
+    if (!runtime->FlushInstCache(-1, peImage, imageSize))
+    {
+        return false;
+    }
+    runtime->ExitCode = ((uint(*)())(peImage + entryPoint))();
     return true;
 }
 
