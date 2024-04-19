@@ -32,11 +32,11 @@ typedef uint    HANDLE;
 #define PAGE_EXECUTE_READWRITE 0x40
 #define PAGE_EXECUTE_WRITECOPY 0x80
 
-#define PE_HEADER_SIZE 24
-#define PE_OPT_HEADER_SIZE_64 240
-#define PE_OPT_HEADER_SIZE_32 224
-#define PE_SECTION_HEADER_SIZE 40
-#define PE_DATA_DIRECTORY_SIZE 8
+#define PE_FILE_HEADER_SIZE      24
+#define PE_OPT_HEADER_SIZE_64    240
+#define PE_OPT_HEADER_SIZE_32    224
+#define PE_SECTION_HEADER_SIZE   40
+#define PE_DATA_DIRECTORY_SIZE   8
 #define PE_IMPORT_DIRECTORY_SIZE 20
 
 #define IMAGE_ORDINAL_FLAG64 0x8000000000000000
@@ -64,14 +64,14 @@ typedef uintptr (*VirtualAlloc)
     uintptr lpAddress, uint dwSize, uint32 flAllocationType, uint32 flProtect
 );
 
-typedef bool (*VirtualProtect)
-(
-    uintptr lpAddress, uint dwSize, uint32 flNewProtect, uint32* lpflOldProtect
-);
-
 typedef bool (*VirtualFree)
 (
     uintptr lpAddress, uint dwSize, uint32 dwFreeType
+);
+
+typedef bool (*VirtualProtect)
+(
+    uintptr lpAddress, uint dwSize, uint32 flNewProtect, uint32* lpflOldProtect
 );
 
 typedef HMODULE (*LoadLibraryA)
@@ -94,7 +94,7 @@ typedef bool (*FlushInstCache)
     HANDLE hProcess, uintptr lpBaseAddress, uint dwSize
 );
 
-typedef HANDLE(*CreateThread)
+typedef HANDLE (*CreateThread)
 (
     uintptr lpThreadAttributes, uint dwStackSize, uintptr lpStartAddress,
     uintptr lpParameter, uint32 dwCreationFlags, uint32* lpThreadId
