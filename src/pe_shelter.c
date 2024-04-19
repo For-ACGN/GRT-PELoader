@@ -80,6 +80,7 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
         {
             break;
         }
+        runtime.Debug = (uintptr)(&callEntryPoint);
         callEntryPoint(&runtime);
 
         break;
@@ -117,8 +118,8 @@ static bool initAPI(PEShelterRT* runtime)
     hash = 0xB82F958E3932DE49;
     key  = 0x1CA95AA0C4E69F35;
     #elif _WIN32
-    uint32 hash = 0xFE192059;
-    uint32 key  = 0x397FD02C;
+    hash = 0xFE192059;
+    key  = 0x397FD02C;
     #endif
     VirtualFree virtualFree = (VirtualFree)findAPI(hash, key);
     if (virtualFree == NULL)
@@ -127,10 +128,10 @@ static bool initAPI(PEShelterRT* runtime)
     }
     #ifdef _WIN64
     hash = 0x8CDC3CBC1ABF3F5F;
-    key = 0xC3AEEDC9843D7B34;
+    key  = 0xC3AEEDC9843D7B34;
     #elif _WIN32
-    uint32 hash = 0xD41DCE2B;
-    uint32 key = 0xEB37C512;
+    hash = 0xD41DCE2B;
+    key  = 0xEB37C512;
     #endif
     VirtualProtect virtualProtect = (VirtualProtect)findAPI(hash, key);
     if (virtualProtect == NULL)
@@ -177,8 +178,8 @@ static bool initAPI(PEShelterRT* runtime)
     hash = 0x8172B49F66E495BA;
     key  = 0x8F0D0796223B56C2;
     #elif _WIN32
-    hash = 0x07783159;
-    key  = 0xF0EB8818;
+    hash = 0x87A2CEE8;
+    key  = 0x42A3C1AF;
     #endif
     FlushInstCache flushInstCache = (FlushInstCache)findAPI(hash, key);
     if (flushInstCache == NULL)
@@ -216,10 +217,18 @@ static bool parsePEImage(PEShelterRT* runtime)
     uint16 numSections = *(uint16*)(imageAddr + peOffset + 6);
     uint16 optHeaderSize = *(uint16*)(imageAddr + peOffset + 20);
     // parse OptionalHeader
-    uint16  ddOffset = PE_OPT_HEADER_SIZE_64 - 16*PE_DATA_DIRECTORY_SIZE;
-    uintptr dataDir = imageAddr + peOffset + PE_HEADER_SIZE + ddOffset;
+    #ifdef _WIN64
+    uint16 ddOffset = PE_OPT_HEADER_SIZE_64 - 16*PE_DATA_DIRECTORY_SIZE;
+    #elif _WIN32
+    uint16 ddOffset = PE_OPT_HEADER_SIZE_32 - 16*PE_DATA_DIRECTORY_SIZE;
+    #endif
+    uintptr dataDir = imageAddr + peOffset + PE_FILE_HEADER_SIZE + ddOffset;
     uint32  entryPoint = *(uint32*)(imageAddr + peOffset + 40);
+    #ifdef _WIN64
     uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 48);
+    #elif _WIN32
+    uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 52);
+    #endif
     uint32  imageSize = *(uint32*)(imageAddr + peOffset + 80);
     runtime->PEOffset = peOffset;
     runtime->NumSections = numSections;
@@ -244,7 +253,7 @@ static bool mapPESections(PEShelterRT* runtime)
     uintptr imageAddr = runtime->ImageAddr;
     uint32  peOffset = runtime->PEOffset;
     uint16  optHeaderSize = runtime->OptHeaderSize;
-    uintptr section = imageAddr + peOffset + PE_HEADER_SIZE + optHeaderSize;
+    uintptr section = imageAddr + peOffset + PE_FILE_HEADER_SIZE + optHeaderSize;
     for (uint16 i = 0; i < runtime->NumSections; i++)
     {
         uint32 virtualAddress = *(uint32*)(section + 12);
@@ -283,9 +292,10 @@ static bool fixRelocTable(PEShelterRT* runtime)
         uintptr dstAddr = peImage + baseReloc->VirtualAddress;
         for (uint32 i = 0; i < (baseReloc->SizeOfBlock - 8) / 2; i++)
         {
-            uint16  info = *(uint16*)(infoPtr);
-            uint16  type = info >> 12;
-            uint16  offset = info & 0xFFF;
+            uint16 info = *(uint16*)(infoPtr);
+            uint16 type = info >> 12;
+            uint16 offset = info & 0xFFF;
+
             uint32* patchAddr32;
             uint64* patchAddr64;
             switch (type)
@@ -363,7 +373,11 @@ static bool processIAT(PEShelterRT* runtime)
                 break;
             }
             LPCSTR procName;
-            if ((value&IMAGE_ORDINAL_FLAG64) != 0)
+            #ifdef _WIN64
+            if ((value & IMAGE_ORDINAL_FLAG64) != 0)
+            #elif _WIN32
+            if ((value & IMAGE_ORDINAL_FLAG32) != 0)
+            #endif
             {
                 procName = (LPCSTR)(value&0xFFFF);
             } else {
@@ -395,7 +409,7 @@ static bool callEntryPoint(PEShelterRT* runtime)
     {
         return false;
     }
-    // flushd instruction cache
+    // flush instruction cache
     if (!runtime->FlushInstCache(-1, peImage, imageSize))
     {
         return false;
@@ -412,9 +426,3 @@ static void copyMemory(uintptr dst, uintptr src, uint size)
         *(byte*)(dst + i) = *(byte*)(src + i);
     }
 }
-
-#ifdef _WIN64
-
-#elif _WIN32
-
-#endif
