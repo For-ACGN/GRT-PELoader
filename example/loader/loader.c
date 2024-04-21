@@ -1,5 +1,4 @@
 #include <windows.h>
-
 #include "go_types.h"
 #include "hash_api.h"
 #include "pe_shelter.h"
@@ -7,7 +6,7 @@
 #pragma comment(linker, "/ENTRY:EntryMain")
 uint EntryMain() 
 {
-    HANDLE hFile = CreateFileA("E:\\Temp\\hash.exe", GENERIC_READ, 0, NULL, OPEN_ALWAYS, 0, NULL);
+    HANDLE hFile = CreateFileA("E:\\Temp\\hash_64.exe", GENERIC_READ, 0, NULL, OPEN_ALWAYS, 0, NULL);
     if (hFile == INVALID_HANDLE_VALUE)
     {
         return -1;
