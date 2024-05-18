@@ -13,13 +13,13 @@ typedef unsigned int       uint32;
 typedef unsigned long long uint64;
 
 #ifdef _WIN64
-typedef int64  integer;
-typedef uint64 uint;
-typedef uint64 uintptr;
+    typedef int64  integer;
+    typedef uint64 uint;
+    typedef uint64 uintptr;
 #elif _WIN32
-typedef int32  integer;
-typedef uint32 uint;
-typedef uint32 uintptr;
+    typedef int32  integer;
+    typedef uint32 uint;
+    typedef uint32 uintptr;
 #endif
 
 typedef float  float32;
@@ -32,7 +32,9 @@ typedef _Bool bool;
 #define true  1
 #define false 0
 
+#ifndef NULL
 #define NULL 0
+#endif
 
 // copy from <stdint.h>
 #define INT8_MIN   (-127i8 - 1)
@@ -47,5 +49,27 @@ typedef _Bool bool;
 #define UINT16_MAX 0xFFFFui16
 #define UINT32_MAX 0xFFFFFFFFui32
 #define UINT64_MAX 0xFFFFFFFFFFFFFFFFui64
+
+// calculate array length
+#ifndef arrlen
+#define arrlen(array) (sizeof(array) / sizeof(array[0]))
+#endif
+
+#ifndef offsetof
+#define offsetof(struct, field) ((uintptr) & (((struct*)0)->field))
+#endif
+
+// copy is used to copy source memory data to the destination.
+static void copy(void* dst, void* src, uint size)
+{
+    byte* d = (byte*)dst;
+    byte* s = (byte*)src;
+    for (uint i = 0; i < size; i++)
+    {
+        *d = *s;
+        d++;
+        s++;
+    }
+}
 
 #endif // GO_TYPES_H
