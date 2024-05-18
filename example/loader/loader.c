@@ -11,8 +11,7 @@ uint EntryMain()
     {
         return -1;
     }
-    DWORD dwSize;
-    dwSize = GetFileSize(hFile, 0);
+    DWORD dwSize = GetFileSize(hFile, 0);
     LPVOID lpAddress = VirtualAlloc(NULL, dwSize, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
     if (lpAddress == NULL)
     {
@@ -26,11 +25,9 @@ uint EntryMain()
         return -1;
     }
 
-    PEShelterCtx context = {
-        .FindAPI  = FindAPI,
-        .Hooks    = NULL,
-        .NumHooks = 1,
+    PEShelter_Opts options = {
+        .GetProcAddress = GetProcAddress,
     };
-    uintptr entry = LoadPE(&context, (uintptr)lpAddress);
+    uintptr entry = LoadPE((uintptr)lpAddress, &options);
     return entry;
 }

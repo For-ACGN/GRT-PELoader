@@ -23,6 +23,12 @@
     <ClCompile Include="..\..\src\pe_shelter.c" />
     <ClCompile Include="loader.c" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\include\go_types.h" />
+    <ClInclude Include="..\..\include\hash_api.h" />
+    <ClInclude Include="..\..\include\pe_shelter.h" />
+    <ClInclude Include="..\..\include\windows_t.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
@@ -104,16 +110,18 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir)include</AdditionalIncludeDirectories>
-      <DebugInformationFormat>None</DebugInformationFormat>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <CallingConvention>StdCall</CallingConvention>
+      <Optimization>MinSpace</Optimization>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -137,16 +145,18 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir)include</AdditionalIncludeDirectories>
-      <DebugInformationFormat>None</DebugInformationFormat>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <CallingConvention>StdCall</CallingConvention>
+      <Optimization>MinSpace</Optimization>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
