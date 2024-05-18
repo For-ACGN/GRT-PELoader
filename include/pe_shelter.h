@@ -2,24 +2,13 @@
 #define PE_SHELTER_H
 
 #include "go_types.h"
-
-#ifdef _WIN64
-typedef uintptr (*FindAPI_t)(uint64 hash, uint64 key);
-#elif _WIN32
-typedef uintptr (*FindAPI_t)(uint32 hash, uint32 key);
-#endif
+#include "windows_t.h"
 
 typedef struct {
-    uintptr Original;
-    uintptr Replace;
-} Hook;
+    // use custom GetProcAddress for IAT hook
+    GetProcAddress_t GetProcAddress;
+} PEShelter_Opts;
 
-typedef struct {
-	FindAPI_t FindAPI;
-    uint      NumHooks;
-    Hook      (*Hooks)[];
-} PEShelterCtx;
-
-uintptr LoadPE(PEShelterCtx* context, uintptr address);
+uintptr LoadPE(uintptr address, PEShelter_Opts* opts);
 
 #endif // PE_SHELTER_H
