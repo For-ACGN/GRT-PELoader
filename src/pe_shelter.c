@@ -1,22 +1,23 @@
 #include "go_types.h"
 #include "windows_t.h"
+#include "hash_api.h"
 #include "pe_shelter.h"
 
 typedef struct {
-    PEShelterCtx* context;
-
     // Arguments
     uintptr ImageAddr;
 
-    // API address
-    VirtualAlloc   VirtualAlloc;
-    VirtualFree    VirtualFree;
-    VirtualProtect VirtualProtect;
-    LoadLibraryA   LoadLibraryA;
-    FreeLibrary    FreeLibrary;
-    GetProcAddress GetProcAddress;
-    FlushInstCache FlushInstCache;
-    CreateThread   CreateThread;
+    PEShelter_Opts* Options;
+
+    // API addresses
+    VirtualAlloc_t          VirtualAlloc;
+    VirtualFree_t           VirtualFree;
+    VirtualProtect_t        VirtualProtect;
+    LoadLibraryA_t          LoadLibraryA;
+    FreeLibrary_t           FreeLibrary;
+    GetProcAddress_t        GetProcAddress;
+    FlushInstructionCache_t FlushInstructionCache;
+    CreateThread_t          CreateThread;
 
     // PE image information
     uintptr PEImage;
@@ -40,28 +41,29 @@ static bool mapPESections(PEShelterRT* runtime);
 static bool fixRelocTable(PEShelterRT* runtime);
 static bool processIAT(PEShelterRT* runtime);
 static bool callEntryPoint(PEShelterRT* runtime);
-static void copyMemory(uintptr dst, uintptr src, uint len);
 
-uintptr LoadPE(PEShelterCtx* context, uintptr address)
+uintptr LoadPE(uintptr address, PEShelter_Opts* opts)
 {
     PEShelterRT runtime = {
-        .context   = context,
         .ImageAddr = address,
+        .Options   = opts,
 
         // ignore Visual Studio bug fix
-        .VirtualAlloc   = (VirtualAlloc)1,
-        .VirtualFree    = (VirtualFree)1,
-        .VirtualProtect = (VirtualProtect)1,
-        .LoadLibraryA   = (LoadLibraryA)1,
-        .FreeLibrary    = (FreeLibrary)1,
-        .GetProcAddress = (GetProcAddress)1,
-        .FlushInstCache = (FlushInstCache)1,
-        .CreateThread   = (CreateThread)1,
+        .VirtualAlloc   = (VirtualAlloc_t)1,
+        .VirtualFree    = (VirtualFree_t)1,
+        .VirtualProtect = (VirtualProtect_t)1,
+        .LoadLibraryA   = (LoadLibraryA_t)1,
+        .FreeLibrary    = (FreeLibrary_t)1,
+        .GetProcAddress = (GetProcAddress_t)1,
+        .FlushInstructionCache = (FlushInstructionCache_t)1,
+        .CreateThread   = (CreateThread_t)1,
     };
     if (!initAPI(&runtime))
     {
         return NULL;
     }
+    runtime.GetProcAddress = opts->GetProcAddress;
+
     for (;;)
     {
         if (!parsePEImage(&runtime))
@@ -100,8 +102,6 @@ uintptr LoadPE(PEShelterCtx* context, uintptr address)
 // initAPI is used to find API addresses for PE loader.
 static bool initAPI(PEShelterRT* runtime)
 {
-    FindAPI_t findAPI = runtime->context->FindAPI;
-
     #ifdef _WIN64
     uint64 hash = 0xB6A1D0D4A275D4B6;
     uint64 key  = 0x64CB4D66EC0BEFD9;
@@ -109,7 +109,7 @@ static bool initAPI(PEShelterRT* runtime)
     uint32 hash = 0xC3DE112E;
     uint32 key  = 0x8D9EA74F;
     #endif
-    VirtualAlloc virtualAlloc = (VirtualAlloc)findAPI(hash, key);
+    VirtualAlloc_t virtualAlloc = (VirtualAlloc_t)FindAPI(hash, key);
     if (virtualAlloc == NULL)
     {
         return false;
@@ -121,7 +121,7 @@ static bool initAPI(PEShelterRT* runtime)
     hash = 0xFE192059;
     key  = 0x397FD02C;
     #endif
-    VirtualFree virtualFree = (VirtualFree)findAPI(hash, key);
+    VirtualFree_t virtualFree = (VirtualFree_t)FindAPI(hash, key);
     if (virtualFree == NULL)
     {
         return false;
@@ -133,7 +133,7 @@ static bool initAPI(PEShelterRT* runtime)
     hash = 0xD41DCE2B;
     key  = 0xEB37C512;
     #endif
-    VirtualProtect virtualProtect = (VirtualProtect)findAPI(hash, key);
+    VirtualProtect_t virtualProtect = (VirtualProtect_t)FindAPI(hash, key);
     if (virtualProtect == NULL)
     {
         return false;
@@ -145,7 +145,7 @@ static bool initAPI(PEShelterRT* runtime)
     hash = 0xCCB2E46E;
     key  = 0xAEB5A665;
     #endif
-    LoadLibraryA loadLibraryA = (LoadLibraryA)findAPI(hash, key);
+    LoadLibraryA_t loadLibraryA = (LoadLibraryA_t)FindAPI(hash, key);
     if (loadLibraryA == NULL)
     {
         return false;
@@ -157,7 +157,7 @@ static bool initAPI(PEShelterRT* runtime)
     hash = 0x2C1F810D;
     key  = 0xCB356B02;
     #endif
-    FreeLibrary freeLibrary = (FreeLibrary)findAPI(hash, key);
+    FreeLibrary_t freeLibrary = (FreeLibrary_t)FindAPI(hash, key);
     if (freeLibrary == NULL)
     {
         return false;
@@ -169,7 +169,7 @@ static bool initAPI(PEShelterRT* runtime)
     hash = 0x5B4DC502;
     key  = 0xC2CC2C19;
     #endif
-    GetProcAddress getProcAddress = (GetProcAddress)findAPI(hash, key);
+    GetProcAddress_t getProcAddress = (GetProcAddress_t)FindAPI(hash, key);
     if (getProcAddress == NULL)
     {
         return false;
@@ -181,7 +181,7 @@ static bool initAPI(PEShelterRT* runtime)
     hash = 0x87A2CEE8;
     key  = 0x42A3C1AF;
     #endif
-    FlushInstCache flushInstCache = (FlushInstCache)findAPI(hash, key);
+    FlushInstructionCache_t flushInstCache = (FlushInstructionCache_t)FindAPI(hash, key);
     if (flushInstCache == NULL)
     {
         return false;
@@ -193,19 +193,19 @@ static bool initAPI(PEShelterRT* runtime)
     hash = 0x8DF47CDE;
     key  = 0x17656962;
     #endif
-    CreateThread createThread = (CreateThread)findAPI(hash, key);
+    CreateThread_t createThread = (CreateThread_t)FindAPI(hash, key);
     if (createThread == NULL)
     {
         return false;
     }
-    runtime->VirtualAlloc   = virtualAlloc;
-    runtime->VirtualProtect = virtualProtect;
-    runtime->VirtualFree    = virtualFree;
-    runtime->LoadLibraryA   = loadLibraryA;
-    runtime->FreeLibrary    = freeLibrary;
-    runtime->GetProcAddress = getProcAddress;
-    runtime->FlushInstCache = flushInstCache;
-    runtime->CreateThread   = createThread;
+    runtime->VirtualAlloc          = virtualAlloc;
+    runtime->VirtualProtect        = virtualProtect;
+    runtime->VirtualFree           = virtualFree;
+    runtime->LoadLibraryA          = loadLibraryA;
+    runtime->FreeLibrary           = freeLibrary;
+    runtime->GetProcAddress        = getProcAddress;
+    runtime->FlushInstructionCache = flushInstCache;
+    runtime->CreateThread          = createThread;
     return true;
 }
 
@@ -259,9 +259,9 @@ static bool mapPESections(PEShelterRT* runtime)
         uint32 virtualAddress = *(uint32*)(section + 12);
         uint32 sizeOfRawData = *(uint32*)(section + 16);
         uint32 pointerToRawData = *(uint32*)(section + 20);
-        uintptr dst = peImage + virtualAddress;
-        uintptr src = runtime->ImageAddr + pointerToRawData;
-        copyMemory(dst, src, sizeOfRawData);
+        byte*  dst = (byte*)(peImage + virtualAddress);
+        byte*  src = (byte*)(runtime->ImageAddr + pointerToRawData);
+        copy(dst, src, sizeOfRawData);
         section += PE_SECTION_HEADER_SIZE;
     }
     runtime->PEImage = peImage;
@@ -410,19 +410,10 @@ static bool callEntryPoint(PEShelterRT* runtime)
         return false;
     }
     // flush instruction cache
-    if (!runtime->FlushInstCache(-1, peImage, imageSize))
+    if (!runtime->FlushInstructionCache(-1, peImage, imageSize))
     {
         return false;
     }
     runtime->ExitCode = ((uint(*)())(peImage + entryPoint))();
     return true;
-}
-
-// copyMemory is used to copy source memory data to the destination.
-static void copyMemory(uintptr dst, uintptr src, uint size)
-{
-    for (uintptr i = 0; i < size; i++)
-    {
-        *(byte*)(dst + i) = *(byte*)(src + i);
-    }
 }
