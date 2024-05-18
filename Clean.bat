@@ -1,5 +1,5 @@
-del /S /Q ".vs\PE-Shelter\v17\ipch\AutoPCH"
-del /S /Q ".vs\PE-Shelter\v17\Browse.VC.db"
+del /S /Q ".vs\GRT-PELoader\v17\Browse.VC.db"
+rd  /S /Q ".vs\GRT-PELoader\v17\ipch\AutoPCH"
 
 rd /S /Q "Debug"
 rd /S /Q "Release"
