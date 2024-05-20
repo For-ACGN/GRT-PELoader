@@ -1,5 +1,5 @@
-#ifndef GO_TYPES_H
-#define GO_TYPES_H
+#ifndef C_TYPES_H
+#define C_TYPES_H
 
 // reference basic types from Go
 typedef char      int8;
@@ -50,26 +50,22 @@ typedef _Bool bool;
 #define UINT32_MAX 0xFFFFFFFFui32
 #define UINT64_MAX 0xFFFFFFFFFFFFFFFFui64
 
-// calculate array length
+// calculate the array length
 #ifndef arrlen
 #define arrlen(array) (sizeof(array) / sizeof(array[0]))
 #endif
 
+// calculate the structure field offset of the structure
 #ifndef offsetof
 #define offsetof(struct, field) ((uintptr) & (((struct*)0)->field))
 #endif
 
-// copy is used to copy source memory data to the destination.
-static void copy(void* dst, void* src, uint size)
-{
-    byte* d = (byte*)dst;
-    byte* s = (byte*)src;
-    for (uint i = 0; i < size; i++)
-    {
-        *d = *s;
-        d++;
-        s++;
-    }
-}
+// reference panic from Go
+#define PANIC_UNREACHABLE_CODE 0x00000000
+#define PANIC_REACHABLE_TEST   0x00001000
 
-#endif // GO_TYPES_H
+#ifndef panic
+#define panic(val) (*(int*)(val) = 0)
+#endif
+
+#endif // C_TYPES_H
