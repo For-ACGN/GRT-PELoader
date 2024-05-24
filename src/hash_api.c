@@ -1,4 +1,6 @@
-#include "go_types.h"
+#include "c_types.h"
+#include "windows_t.h"
+#include "lib_memory.h"
 #include "hash_api.h"
 
 #ifdef _WIN64
@@ -83,13 +85,13 @@ uintptr FindAPI(uint hash, uint key)
             modHash += b;
         }
         // calculate function name hash
-        uint32  numFunc   = *(uint32*)(eat + 24);
+        uint32  numNames  = *(uint32*)(eat + 24);
         uintptr funcNames = modBase + (uintptr)(*(uint32*)(eat + 32));
-        for (uint32 i = 0; i < numFunc; i++)
+        for (uint32 i = 0; i < numNames; i++)
         {
             // calculate function name address
-            uint32 nameOff  = *(uint32*)(funcNames + (uintptr)(i * 4));
-            byte*  funcName = (byte*)(modBase + nameOff);
+            uint32 nameRVA  = *(uint32*)(funcNames + (uintptr)(i * 4));
+            byte*  funcName = (byte*)(modBase + nameRVA);
             uint   funcHash = seedHash;
             for (;;)
             {
@@ -103,20 +105,59 @@ uintptr FindAPI(uint hash, uint key)
                 funcName++;
             }
             // calculate the finally hash and compare it
-            uint h = seedHash + keyHash + modHash + funcHash;
-            if (h != hash) 
+            uint finHash = seedHash + keyHash + modHash + funcHash;
+            if (finHash != hash) 
             {
                 continue;
             }
-            // calculate the ordinal table
+            // calculate the AddressOfFunctions
             uintptr funcTable = modBase + (uintptr)(*(uint32*)(eat + 28));
-            // calculate the desired functions ordinal
+            // calculate the AddressOfNameOrdinals
             uintptr ordinalTable = modBase + (uintptr)(*(uint32*)(eat + 36));
             // calculate offset of ordinal
             uint16 ordinal = *(uint16*)(ordinalTable + (uintptr)(i * 2));
-            // calculate the function address
-            uint32 funcOff = *(uint32*)(funcTable + (uintptr)(ordinal * 4));
-            return modBase + funcOff;
+            // calculate the function RVA
+            uint32 funcRVA = *(uint32*)(funcTable + (uintptr)(ordinal * 4));
+            // check is forwarded export function
+        #ifdef _WIN64
+            uint32 eatSize = *(uint32*)(peHeader + 140);
+        #elif _WIN32
+            uint32 eatSize = *(uint32*)(peHeader + 124);
+        #endif
+            if (funcRVA < eatRVA || funcRVA >= eatRVA + eatSize)
+            {
+                return modBase + funcRVA;
+            }
+            // search the at last "."
+            byte* exportName = (byte*)(modBase + funcRVA);
+            byte* src = exportName;
+            uint  dot = 0;
+            for (uint i = 0;; i++)
+            {
+                byte b = *src;
+                if (b == '.')
+                {
+                    dot = i;
+                }
+                if (b == 0x00)
+                {
+                    break;
+                }
+                src++;
+            }
+            // build DLL name
+            byte dllName[MAX_PATH];
+            mem_copy(&dllName[0], exportName, dot + 1);
+            dllName[dot+1] = 'd';
+            dllName[dot+2] = 'l';
+            dllName[dot+3] = 'l';
+            dllName[dot+4] = 0x00;
+            // build hash and key
+            byte* module   = &dllName[0];
+            byte* function = (byte*)((uint)exportName + dot + 1);
+            uint key  = finHash + (uint)function;
+            uint hash = HashAPI_A(module, function, key);
+            return FindAPI(hash, key);
         }
     }
     return NULL;
@@ -202,6 +243,7 @@ uint64 HashAPI64_A(byte* module, byte* function, uint64 key)
         modHash = ror64(modHash, ROR_MOD_64);
         modHash += b;
         modHash = ror64(modHash, ROR_MOD_64);
+        modHash += 0;
         if (b == 0x00)
         {
             break;
@@ -234,10 +276,13 @@ uint64 HashAPI64_W(byte* module, byte* function, uint64 key)
     {
         byte b0 = *(module + 0);
         byte b1 = *(module + 1);
-        // check is ASCII
-        if (b1 == 0x00 && b0 >= 'a')
+        if (b0 >= 'a')
         {
             b0 -= 0x20;
+        }
+        if (b1 >= 'a')
+        {
+            b1 -= 0x20;
         }
         modHash = ror64(modHash, ROR_MOD_64);
         modHash += b0;
@@ -323,6 +368,7 @@ uint32 HashAPI32_A(byte* module, byte* function, uint32 key)
         modHash = ror32(modHash, ROR_MOD_32);
         modHash += b;
         modHash = ror32(modHash, ROR_MOD_32);
+        modHash += 0;
         if (b == 0x00)
         {
             break;
@@ -355,10 +401,13 @@ uint32 HashAPI32_W(byte* module, byte* function, uint32 key)
     {
         byte b0 = *(module + 0);
         byte b1 = *(module + 1);
-        // check is ASCII
-        if (b1 == 0x00 && b0 >= 'a')
+        if (b0 >= 'a')
         {
             b0 -= 0x20;
+        }
+        if (b1 >= 'a')
+        {
+            b1 -= 0x20;
         }
         modHash = ror32(modHash, ROR_MOD_32);
         modHash += b0;
