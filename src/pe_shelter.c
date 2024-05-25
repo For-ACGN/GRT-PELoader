@@ -1,6 +1,7 @@
-#include "go_types.h"
+#include "c_types.h"
 #include "windows_t.h"
 #include "hash_api.h"
+#include "lib_memory.h"
 #include "pe_shelter.h"
 
 typedef struct {
@@ -261,7 +262,7 @@ static bool mapPESections(PEShelterRT* runtime)
         uint32 pointerToRawData = *(uint32*)(section + 20);
         byte*  dst = (byte*)(peImage + virtualAddress);
         byte*  src = (byte*)(runtime->ImageAddr + pointerToRawData);
-        copy(dst, src, sizeOfRawData);
+        mem_copy(dst, src, sizeOfRawData);
         section += PE_SECTION_HEADER_SIZE;
     }
     runtime->PEImage = peImage;
