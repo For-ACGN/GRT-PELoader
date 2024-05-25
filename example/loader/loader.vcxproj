@@ -20,12 +20,19 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\src\hash_api.c" />
+    <ClCompile Include="..\..\src\lib_memory.c" />
+    <ClCompile Include="..\..\src\lib_string.c" />
+    <ClCompile Include="..\..\src\list_md.c" />
     <ClCompile Include="..\..\src\pe_shelter.c" />
     <ClCompile Include="loader.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\include\go_types.h" />
+    <ClInclude Include="..\..\include\c_types.h" />
+    <ClInclude Include="..\..\include\epilogue.h" />
     <ClInclude Include="..\..\include\hash_api.h" />
+    <ClInclude Include="..\..\include\lib_memory.h" />
+    <ClInclude Include="..\..\include\lib_string.h" />
+    <ClInclude Include="..\..\include\list_md.h" />
     <ClInclude Include="..\..\include\pe_shelter.h" />
     <ClInclude Include="..\..\include\windows_t.h" />
   </ItemGroup>

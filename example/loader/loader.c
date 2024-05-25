@@ -1,5 +1,5 @@
 #include <windows.h>
-#include "go_types.h"
+#include "c_types.h"
 #include "hash_api.h"
 #include "pe_shelter.h"
 
@@ -26,6 +26,7 @@ uint EntryMain()
     }
 
     PEShelter_Opts options = {
+        .FindAPI        = FindAPI,
         .GetProcAddress = GetProcAddress,
     };
     uintptr entry = LoadPE((uintptr)lpAddress, &options);
