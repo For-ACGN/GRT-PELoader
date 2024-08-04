@@ -1,5 +1,5 @@
-#ifndef PE_SHELTER_H
-#define PE_SHELTER_H
+#ifndef PE_LOADER_H
+#define PE_LOADER_H
 
 #include "c_types.h"
 #include "windows_t.h"
@@ -11,8 +11,12 @@ typedef struct {
 
     // use custom GetProcAddress for IAT hook
     GetProcAddress_t GetProcAddress;
-} PEShelter_Opts;
 
-uintptr LoadPE(uintptr address, PEShelter_Opts* opts);
+    // wait main thread until exit
+    bool WaitThread;
+} PELoader_Opts;
 
-#endif // PE_SHELTER_H
+
+uintptr LoadPE(uintptr address, uint size, PELoader_Opts* opts);
+
+#endif // PE_LOADER_H
