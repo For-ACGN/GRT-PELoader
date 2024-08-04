@@ -3,41 +3,44 @@
 
 #include "c_types.h"
 
-/* 
-* Documents:
-* https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc
-* https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfree
-* https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualprotect
-* https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-flushinstructioncache
-* https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createthread
-* https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-loadlibrarya
-* https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-freelibrary
-* https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getprocaddress
-*/
+typedef uint8  BYTE;
+typedef uint16 WORD;
+typedef uint32 DWORD;
+typedef uint64 QWORD;
 
-#ifndef _WINDOWS_
-#define _WINDOWS_
+typedef int8  CHAR;
+typedef int16 SHORT;
+typedef int32 LONG;
+typedef int64 LONGLONG;
 
-typedef byte*   LPCSTR;
-typedef uintptr HMODULE;
-typedef uint    HANDLE;
+typedef uint UINT;
+typedef bool BOOL;
+typedef uint SIZE_T;
+
+typedef void* POINTER;
+typedef void* HMODULE;
+typedef void* HANDLE;
+typedef void* FARPROC;
+
+typedef void*   LPVOID;
+typedef HANDLE* LPHANDLE;
+
+typedef const void*   LPCVOID;
+typedef const uint8*  LPCSTR;
+typedef const uint16* LPCWSTR;
 
 #define MEM_COMMIT  0x00001000
 #define MEM_RESERVE 0x00002000
 #define MEM_RELEASE 0x00008000
 
-#define PAGE_NOACCESS          0x01
-#define PAGE_READONLY          0x02
-#define PAGE_READWRITE         0x04
-#define PAGE_WRITECOPY         0x08
-#define PAGE_EXECUTE           0x10
-#define PAGE_EXECUTE_READ      0x20
-#define PAGE_EXECUTE_READWRITE 0x40
-#define PAGE_EXECUTE_WRITECOPY 0x80
-
-#define MAX_PATH 260
-
-#endif // _WINDOWS_
+#define PAGE_NOACCESS          0x00000001
+#define PAGE_READONLY          0x00000002
+#define PAGE_READWRITE         0x00000004
+#define PAGE_WRITECOPY         0x00000008
+#define PAGE_EXECUTE           0x00000010
+#define PAGE_EXECUTE_READ      0x00000020
+#define PAGE_EXECUTE_READWRITE 0x00000040
+#define PAGE_EXECUTE_WRITECOPY 0x00000080
 
 #define PE_FILE_HEADER_SIZE      24
 #define PE_OPT_HEADER_SIZE_64    240
@@ -54,57 +57,42 @@ typedef uint    HANDLE;
 #define IMAGE_REL_BASED_DIR64    10
 
 typedef struct {
-    uint32 VirtualAddress;
-    uint32 SizeOfBlock;
+    DWORD VirtualAddress;
+    DWORD SizeOfBlock;
 } PE_ImageBaseRelocation;
 
 typedef struct {
-    uint32 OriginalFirstThunk;
-    uint32 TimeDateStamp;
-    uint32 ForwarderChain;
-    uint32 Name;
-    uint32 FirstThunk;
+    DWORD OriginalFirstThunk;
+    DWORD TimeDateStamp;
+    DWORD ForwarderChain;
+    DWORD Name;
+    DWORD FirstThunk;
 } PE_ImportDirectory;
-
-typedef uintptr (*VirtualAlloc_t)
-(
-    uintptr lpAddress, uint dwSize, uint32 flAllocationType, uint32 flProtect
-);
-
-typedef bool (*VirtualFree_t)
-(
-    uintptr lpAddress, uint dwSize, uint32 dwFreeType
-);
-
-typedef bool (*VirtualProtect_t)
-(
-    uintptr lpAddress, uint dwSize, uint32 flNewProtect, uint32* lpflOldProtect
-);
-
-typedef bool (*FlushInstructionCache_t)
-(
-    HANDLE hProcess, uintptr lpBaseAddress, uint dwSize
-);
-
-typedef HANDLE (*CreateThread_t)
-(
-    uintptr lpThreadAttributes, uint dwStackSize, uintptr lpStartAddress,
-    uintptr lpParameter, uint32 dwCreationFlags, uint32* lpThreadId
-);
 
 typedef HMODULE (*LoadLibraryA_t)
 (
     LPCSTR lpLibFileName
 );
 
-typedef bool (*FreeLibrary_t)
-(
-    HMODULE hLibModule
-);
-
-typedef uintptr (*GetProcAddress_t)
+typedef FARPROC (*GetProcAddress_t)
 (
     HMODULE hModule, LPCSTR lpProcName
+);
+
+typedef LPVOID (*VirtualAlloc_t)
+(
+    LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect
+);
+
+typedef HANDLE (*CreateThread_t)
+(
+    POINTER lpThreadAttributes, SIZE_T dwStackSize, POINTER lpStartAddress,
+    LPVOID lpParameter, DWORD dwCreationFlags, DWORD* lpThreadId
+);
+
+typedef BOOL (*FlushInstructionCache_t)
+(
+    HANDLE hProcess, LPCVOID lpBaseAddress, SIZE_T dwSize
 );
 
 #endif // WINDOWS_T_H
