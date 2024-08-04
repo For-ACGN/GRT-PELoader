@@ -42,6 +42,11 @@ typedef const uint16* LPCWSTR;
 #define PAGE_EXECUTE_READWRITE 0x00000040
 #define PAGE_EXECUTE_WRITECOPY 0x00000080
 
+#define INFINITE      0xFFFFFFFF
+#define WAIT_OBJECT_0 0x00000000
+#define WAIT_TIMEOUT  0x00000102
+#define WAIT_FAILED   0xFFFFFFFF
+
 #define PE_FILE_HEADER_SIZE      24
 #define PE_OPT_HEADER_SIZE_64    240
 #define PE_OPT_HEADER_SIZE_32    224
@@ -84,6 +89,16 @@ typedef LPVOID (*VirtualAlloc_t)
     LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect
 );
 
+typedef BOOL (*VirtualFree_t)
+(
+    LPVOID lpAddress, SIZE_T dwSize, DWORD dwFreeType
+);
+
+typedef BOOL (*VirtualProtect_t)
+(
+    LPVOID lpAddress, SIZE_T dwSize, DWORD flNewProtect, DWORD* lpflOldProtect
+);
+
 typedef HANDLE (*CreateThread_t)
 (
     POINTER lpThreadAttributes, SIZE_T dwStackSize, POINTER lpStartAddress,
@@ -93,6 +108,16 @@ typedef HANDLE (*CreateThread_t)
 typedef BOOL (*FlushInstructionCache_t)
 (
     HANDLE hProcess, LPCVOID lpBaseAddress, SIZE_T dwSize
+);
+
+typedef DWORD (*WaitForSingleObject_t)
+(
+    HANDLE hHandle, DWORD dwMilliseconds
+);
+
+typedef BOOL (*CloseHandle_t)
+(
+    HANDLE hObject
 );
 
 #endif // WINDOWS_T_H

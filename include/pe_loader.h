@@ -2,10 +2,11 @@
 #define PE_LOADER_H
 
 #include "c_types.h"
-#include "windows_t.h"
 #include "hash_api.h"
+#include "errno.h"
 
-typedef uint (*Execute_t)();
+typedef uint  (*Execute_t)();
+typedef errno (*Destroy_t)();
 
 typedef struct {
     // PE image memory address
@@ -25,8 +26,11 @@ typedef struct {
     void* EntryPoint;
     uint  ExitCode;
 
-    // create a thread at EntryPoint.
+    // create a thread at EntryPoint
     Execute_t Execute;
+
+    // release all resource about loader
+    Destroy_t Destroy;
 } PELoader_M;
 
 // InitPELoader is used to initialize PE loader, it will load PE file
