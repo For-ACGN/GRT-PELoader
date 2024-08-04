@@ -5,18 +5,33 @@
 #include "windows_t.h"
 #include "hash_api.h"
 
+typedef uint (*Execute_t)();
+
 typedef struct {
-    // use custom FindAPI from Gleam-RT
+    // PE image memory address
+    void* Image;
+
+    // is a DLL PE image
+    bool IsDLL;
+
+    // wait main thread exit
+    bool WaitMainThread;
+
+    // use custom FindAPI from Gleam-RT for hook
     FindAPI_t FindAPI;
+} PELoader_Cfg;
 
-    // use custom GetProcAddress for IAT hook
-    GetProcAddress_t GetProcAddress;
+typedef struct {
+    void* EntryPoint;
+    uint  ExitCode;
 
-    // wait main thread until exit
-    bool WaitThread;
-} PELoader_Opts;
+    // create a thread at EntryPoint.
+    Execute_t Execute;
+} PELoader_M;
 
-
-uintptr LoadPE(uintptr address, uint size, PELoader_Opts* opts);
+// InitPELoader is used to initialize PE loader, it will load PE file
+// from memory, but it will not run it, caller must use PELoader_M.
+// If failed to initialize, use GetLastError to get error code.
+PELoader_M* InitPELoader(PELoader_Cfg* cfg);
 
 #endif // PE_LOADER_H
