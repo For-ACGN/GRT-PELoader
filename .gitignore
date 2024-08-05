@@ -396,3 +396,10 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Ignore utility executables for scripts
+*.exe
+*.dll
+
+# Ignore JetBrains GoLand
+.idea
