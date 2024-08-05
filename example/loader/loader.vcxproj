@@ -19,16 +19,15 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="loader.c" />
     <ClCompile Include="..\..\src\hash_api.c" />
     <ClCompile Include="..\..\src\lib_memory.c" />
     <ClCompile Include="..\..\src\lib_string.c" />
     <ClCompile Include="..\..\src\list_md.c" />
     <ClCompile Include="..\..\src\pe_shelter.c" />
-    <ClCompile Include="loader.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\c_types.h" />
-    <ClInclude Include="..\..\include\epilogue.h" />
     <ClInclude Include="..\..\include\hash_api.h" />
     <ClInclude Include="..\..\include\lib_memory.h" />
     <ClInclude Include="..\..\include\lib_string.h" />
@@ -91,10 +90,14 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <GenerateManifest>false</GenerateManifest>
     <TargetName>test</TargetName>
+    <LibraryPath>
+    </LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <GenerateManifest>false</GenerateManifest>
     <TargetName>test</TargetName>
+    <LibraryPath>E:\OneDrive\Projects\Visual C++\GitHub\Public\GRT-PELoader\lib;$(LibraryPath)</LibraryPath>
+    <ExternalIncludePath>E:\OneDrive\Projects\Visual C++\GitHub\Public\GRT-PELoader\lib;$(VC_IncludePath);$(WindowsSDK_IncludePath);</ExternalIncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -129,6 +132,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -164,6 +168,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>builder_x64.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>E:\OneDrive\Projects\Visual C++\GitHub\Public\GRT-PELoader\lib\builder_x64.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
