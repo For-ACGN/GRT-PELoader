@@ -7,10 +7,16 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "loader", "example\loader\lo
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
 		Release|x64 = Release|x64
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FEF4F058-6BD3-4210-987B-AE40476241BA}.Debug|x64.ActiveCfg = Debug|x64
+		{FEF4F058-6BD3-4210-987B-AE40476241BA}.Debug|x64.Build.0 = Debug|x64
+		{FEF4F058-6BD3-4210-987B-AE40476241BA}.Debug|x86.ActiveCfg = Debug|Win32
+		{FEF4F058-6BD3-4210-987B-AE40476241BA}.Debug|x86.Build.0 = Debug|Win32
 		{FEF4F058-6BD3-4210-987B-AE40476241BA}.Release|x64.ActiveCfg = Release|x64
 		{FEF4F058-6BD3-4210-987B-AE40476241BA}.Release|x64.Build.0 = Release|x64
 		{FEF4F058-6BD3-4210-987B-AE40476241BA}.Release|x86.ActiveCfg = Release|Win32
