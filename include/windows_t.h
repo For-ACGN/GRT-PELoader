@@ -110,6 +110,16 @@ typedef BOOL (*FlushInstructionCache_t)
     HANDLE hProcess, LPCVOID lpBaseAddress, SIZE_T dwSize
 );
 
+typedef HANDLE (*CreateMutexA_t)
+(
+    POINTER lpMutexAttributes, BOOL bInitialOwner, LPCSTR lpName
+);
+
+typedef BOOL (*ReleaseMutex_t)
+(
+    HANDLE hMutex
+);
+
 typedef DWORD (*WaitForSingleObject_t)
 (
     HANDLE hHandle, DWORD dwMilliseconds
