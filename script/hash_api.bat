@@ -13,6 +13,8 @@ hash_api -fmt 64 -conc -func VirtualFree
 hash_api -fmt 64 -conc -func VirtualProtect
 hash_api -fmt 64 -conc -func CreateThread
 hash_api -fmt 64 -conc -func FlushInstructionCache
+hash_api -fmt 64 -conc -func CreateMutexA
+hash_api -fmt 64 -conc -func ReleaseMutex
 hash_api -fmt 64 -conc -func WaitForSingleObject
 hash_api -fmt 64 -conc -func CloseHandle
 echo.
@@ -25,6 +27,8 @@ hash_api -fmt 32 -conc -func VirtualFree
 hash_api -fmt 32 -conc -func VirtualProtect
 hash_api -fmt 32 -conc -func CreateThread
 hash_api -fmt 32 -conc -func FlushInstructionCache
+hash_api -fmt 32 -conc -func CreateMutexA
+hash_api -fmt 32 -conc -func ReleaseMutex
 hash_api -fmt 32 -conc -func WaitForSingleObject
 hash_api -fmt 32 -conc -func CloseHandle
 echo.
