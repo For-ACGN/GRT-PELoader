@@ -1,7 +1,7 @@
 #ifndef EPILOGUE_H
 #define EPILOGUE_H
 
-// Epilogue is used to calculate the total size of runtime instruction.
+// Epilogue is used to calculate the total size of PE Loader instruction.
 #pragma warning(push)
 #pragma warning(disable: 4276)
 extern void Epilogue();
