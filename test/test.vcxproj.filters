@@ -1,0 +1,82 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Header">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Source">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Assembly">
+      <UniqueIdentifier>{ee81bbf8-5d51-4226-8999-a80fba5a7c24}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\hash_api.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\lib_memory.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\lib_string.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="test_main.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\errno.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\debug.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="lib_string_test.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\rel_addr.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="test.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\epilogue.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\hash_api.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\windows_t.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\lib_memory.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\lib_string.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\c_types.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\errno.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\debug.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="build.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\rel_addr.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="..\asm\epilogue.asm">
+      <Filter>Assembly</Filter>
+    </MASM>
+  </ItemGroup>
+</Project>
