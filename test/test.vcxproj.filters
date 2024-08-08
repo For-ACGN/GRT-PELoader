@@ -38,6 +38,12 @@
     <ClCompile Include="..\src\rel_addr.c">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="pe_loader_test.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\pe_loader.c">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="test.h">
@@ -71,6 +77,9 @@
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="..\include\rel_addr.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\pe_loader.h">
       <Filter>Header</Filter>
     </ClInclude>
   </ItemGroup>
