@@ -1,8 +1,8 @@
 #include "c_types.h"
 #include "windows_t.h"
-#include "hash_api.h"
 #include "lib_memory.h"
-#include "pe_shelter.h"
+#include "hash_api.h"
+#include "pe_loader.h"
 
 typedef struct {
     // Arguments
@@ -34,18 +34,19 @@ typedef struct {
     uint ExitCode;
 
     uintptr Debug;
-} PEShelterRT;
+} PELoader;
 
-static bool initAPI(PEShelterRT* runtime);
-static bool parsePEImage(PEShelterRT* runtime);
-static bool mapPESections(PEShelterRT* runtime);
-static bool fixRelocTable(PEShelterRT* runtime);
-static bool processIAT(PEShelterRT* runtime);
-static bool callEntryPoint(PEShelterRT* runtime);
+static void* allocateLoaderMemory();
+static bool  initLoaderAPI(PELoader* loader);
+static bool  parsePEImage(PELoader* loader);
+static bool  mapPESections(PELoader* loader);
+static bool  fixRelocTable(PELoader* loader);
+static bool  processIAT(PELoader* loader);
+static bool  callEntryPoint(PELoader* loader);
 
-uintptr LoadPE(uintptr address, PEShelter_Opts* opts)
+PELoader_M* InitPELoader(PELoader_Cfg* cfg)
 {
-    PEShelterRT runtime = {
+    PELoader runtime = {
         .ImageAddr = address,
         .Options   = opts,
 
@@ -100,8 +101,13 @@ uintptr LoadPE(uintptr address, PEShelter_Opts* opts)
     return runtime.Debug;
 }
 
+static void* allocateLoaderMemory()
+{
+
+}
+
 // initAPI is used to find API addresses for PE loader.
-static bool initAPI(PEShelterRT* runtime)
+static bool initAPI(PELoader* runtime)
 {
     #ifdef _WIN64
     uint64 hash = 0xB6A1D0D4A275D4B6;
@@ -210,7 +216,7 @@ static bool initAPI(PEShelterRT* runtime)
     return true;
 }
 
-static bool parsePEImage(PEShelterRT* runtime)
+static bool parsePEImage(PELoader* runtime)
 {
     uintptr imageAddr = runtime->ImageAddr;
     uint32  peOffset = *(uint32*)(imageAddr + 60);
@@ -241,7 +247,7 @@ static bool parsePEImage(PEShelterRT* runtime)
     return true;
 }
 
-static bool mapPESections(PEShelterRT* runtime)
+static bool mapPESections(PELoader* runtime)
 {
     // allocate memory for PE image
     uint32 imageSize = runtime->ImageSize;
@@ -269,7 +275,7 @@ static bool mapPESections(PEShelterRT* runtime)
     return true;
 }
 
-static bool fixRelocTable(PEShelterRT* runtime)
+static bool fixRelocTable(PELoader* runtime)
 {
     uintptr peImage = runtime->PEImage;
     uintptr dataDir = runtime->DataDir;
@@ -321,7 +327,7 @@ static bool fixRelocTable(PEShelterRT* runtime)
     return true;
 }
 
-static bool processIAT(PEShelterRT* runtime)
+static bool processIAT(PELoader* runtime)
 {
     uintptr peImage = runtime->PEImage;
     uintptr dataDir = runtime->DataDir;
@@ -399,7 +405,7 @@ static bool processIAT(PEShelterRT* runtime)
     return true;
 }
 
-static bool callEntryPoint(PEShelterRT* runtime)
+static bool callEntryPoint(PELoader* runtime)
 {
     uintptr peImage    = runtime->PEImage;
     uint32  imageSize  = runtime->ImageSize;
