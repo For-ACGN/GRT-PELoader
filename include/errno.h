@@ -15,4 +15,8 @@ errno GetLastErrno();
 
 #define NO_ERROR 0x00000000
 
+#define ERR_FLAG_CAN_IGNORE 0x00010000
+
+#define ERR_LOADER_INIT_DEBUGGER (0x01000001)
+
 #endif // ERRNO_H
