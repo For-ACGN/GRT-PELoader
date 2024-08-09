@@ -11,6 +11,7 @@ PELoader_M* pe_loader;
 #pragma warning(push)
 #pragma warning(disable: 4276)
 bool TestLibString();
+bool TestRandom();
 
 bool TestInitPELoader();
 #pragma warning(pop)
@@ -21,6 +22,7 @@ typedef struct { byte* Name; test_t Test; } unit;
 static unit tests[] = 
 {
     { "Lib_String", TestLibString },
+    { "Random",     TestRandom    },
 
     { "InitPELoader", TestInitPELoader },
 };
