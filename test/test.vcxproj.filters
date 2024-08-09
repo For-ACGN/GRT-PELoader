@@ -44,6 +44,12 @@
     <ClCompile Include="..\src\pe_loader.c">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\random.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="random_test.c">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="test.h">
@@ -80,6 +86,9 @@
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="..\include\pe_loader.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\random.h">
       <Filter>Header</Filter>
     </ClInclude>
   </ItemGroup>
