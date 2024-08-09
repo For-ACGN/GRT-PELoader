@@ -1,14 +1,15 @@
 #include "c_types.h"
 #include "windows_t.h"
 #include "lib_memory.h"
-#include "hash_api.h"
+#include "random.h"
 #include "pe_loader.h"
+#include "debug.h"
+
+#define MAIN_MEM_PAGE_SIZE 4096
 
 typedef struct {
     // Arguments
     uintptr ImageAddr;
-
-    PEShelter_Opts* Options;
 
     // API addresses
     VirtualAlloc_t          VirtualAlloc;
@@ -36,7 +37,7 @@ typedef struct {
     uintptr Debug;
 } PELoader;
 
-static void* allocateLoaderMemory();
+static void* allocateLoaderMemory(PELoader_Cfg* cfg);
 static bool  initLoaderAPI(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  mapPESections(PELoader* loader);
@@ -46,6 +47,27 @@ static bool  callEntryPoint(PELoader* loader);
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
 {
+    if (!InitDebugger())
+    {
+        SetLastErrno(ERR_LOADER_INIT_DEBUGGER);
+        return NULL;
+    }
+    // alloc memory for store loader structure
+    void* memPage = allocateLoaderMemory(cfg);
+    if (memPage == NULL)
+    {
+        SetLastErrno(ERR_LOADER_ALLOC_MEMORY);
+        return NULL;
+    }
+    // set structure address
+    uintptr address = (uintptr)memPage;
+    uintptr loaderAddr = address + 1000 + RandUintN(address, 128);
+    uintptr moduleAddr = address + 2000 + RandUintN(address, 128);
+    // initialize structure
+    PELoader* loader = (PELoader*)loaderAddr;
+    mem_clean(loader, sizeof(PELoader));
+    // store runtime options
+
     PELoader runtime = {
         .ImageAddr = address,
         .Options   = opts,
@@ -101,9 +123,28 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     return runtime.Debug;
 }
 
-static void* allocateLoaderMemory()
+static void* allocateLoaderMemory(PELoader_Cfg* cfg)
 {
-
+#ifdef _WIN64
+    uint hash = 0xEFE2E03329515B77;
+    uint key  = 0x81723B49C5827760;
+#elif _WIN32
+    uint hash = 0xE0C5DD0C;
+    uint key  = 0x1057DA5A;
+#endif
+    VirtualAlloc_t virtualAlloc = cfg->FindAPI(hash, key);
+    if (virtualAlloc == NULL)
+    {
+        return NULL;
+    }
+    LPVOID addr = virtualAlloc(0, MAIN_MEM_PAGE_SIZE, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    if (addr == NULL)
+    {
+        return NULL;
+    }
+    RandBuf(addr, MAIN_MEM_PAGE_SIZE);
+    dbg_log("[loader]", "Main Page: 0x%zX\n", addr);
+    return addr;
 }
 
 // initAPI is used to find API addresses for PE loader.
