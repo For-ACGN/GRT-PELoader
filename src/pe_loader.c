@@ -27,7 +27,7 @@ typedef struct {
     // loader context
     void* MainMemPage; // store all structures
 
-    // PE image information
+    // store PE image information
     uintptr PEImage;
     uint32  PEOffset;
     uint16  NumSections;
@@ -216,9 +216,9 @@ static bool parsePEImage(PELoader* loader)
     uint16 optHeaderSize = *(uint16*)(imageAddr + peOffset + 20);
     // parse OptionalHeader
 #ifdef _WIN64
-    uint16 ddOffset = PE_OPT_HEADER_SIZE_64 - 16*PE_DATA_DIRECTORY_SIZE;
+    uint16 ddOffset = PE_OPT_HEADER_SIZE_64 - 16 * PE_DATA_DIRECTORY_SIZE;
 #elif _WIN32
-    uint16 ddOffset = PE_OPT_HEADER_SIZE_32 - 16*PE_DATA_DIRECTORY_SIZE;
+    uint16 ddOffset = PE_OPT_HEADER_SIZE_32 - 16 * PE_DATA_DIRECTORY_SIZE;
 #endif
     uintptr dataDir = imageAddr + peOffset + PE_FILE_HEADER_SIZE + ddOffset;
     uint32  entryPoint = *(uint32*)(imageAddr + peOffset + 40);
@@ -239,31 +239,32 @@ static bool parsePEImage(PELoader* loader)
     return true;
 }
 
-static bool mapSections(PELoader* runtime)
+static bool mapSections(PELoader* loader)
 {
     // allocate memory for PE image
-    uint32 imageSize = runtime->ImageSize;
-    uintptr peImage = runtime->VirtualAlloc(0, imageSize, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    uint32 imageSize = loader->ImageSize;
+    uintptr peImage = loader->VirtualAlloc(0, imageSize, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (peImage == NULL)
     {
         return false;
     }
     // map PE image sections to the memory
-    uintptr imageAddr = runtime->ImageAddr;
-    uint32  peOffset = runtime->PEOffset;
-    uint16  optHeaderSize = runtime->OptHeaderSize;
+    uintptr imageAddr = (uintptr)(loader->Config.Image);
+    uint32  peOffset  = loader->PEOffset;
+    uint16  optHeaderSize = loader->OptHeaderSize;
     uintptr section = imageAddr + peOffset + PE_FILE_HEADER_SIZE + optHeaderSize;
-    for (uint16 i = 0; i < runtime->NumSections; i++)
+    for (uint16 i = 0; i < loader->NumSections; i++)
     {
-        uint32 virtualAddress = *(uint32*)(section + 12);
-        uint32 sizeOfRawData = *(uint32*)(section + 16);
+        uint32 virtualAddress   = *(uint32*)(section + 12);
+        uint32 sizeOfRawData    = *(uint32*)(section + 16);
         uint32 pointerToRawData = *(uint32*)(section + 20);
         byte*  dst = (byte*)(peImage + virtualAddress);
         byte*  src = (byte*)(imageAddr + pointerToRawData);
         mem_copy(dst, src, sizeOfRawData);
         section += PE_SECTION_HEADER_SIZE;
     }
-    runtime->PEImage = peImage;
+    // record image memory address
+    loader->PEImage = peImage;
     return true;
 }
 
