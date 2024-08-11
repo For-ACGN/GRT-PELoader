@@ -41,6 +41,7 @@ typedef struct {
 
 static void* allocLoaderMemPage(PELoader_Cfg* cfg);
 static bool  initLoaderAPI(PELoader* loader);
+static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
@@ -80,27 +81,17 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
             errno = ERR_LOADER_INIT_API;
             break;
         }
-        if (!parsePEImage(&loader))
+        errno = loadPEImage(&loader);
+        if (errno != NO_ERROR)
         {
-            errno = ERR_LOADER_PARSE_PE_IMAGE;
-            break;
-        }
-        if (!mapSections(&loader))
-        {
-            errno = ERR_LOADER_MAP_SECTIONS;
-            break;
-        }
-        if (!fixRelocTable(&loader))
-        {
-            errno = ERR_LOADER_FIX_RELOC_TABLE;
-            break;
-        }
-        if (!processIAT(&loader))
-        {
-            errno = ERR_LOADER_PROCESS_IAT;
             break;
         }
         break;
+    }
+    if (errno != NO_ERROR)
+    {
+        SetLastErrno(errno);
+        return NULL;
     }
     // create methods for loader
     PELoader_M* module = (PELoader_M*)moduleAddr;
@@ -195,6 +186,27 @@ static bool initLoaderAPI(PELoader* loader)
     return true;
 }
 
+static errno loadPEImage(PELoader* loader)
+{
+    if (!parsePEImage(loader))
+    {
+        return ERR_LOADER_PARSE_PE_IMAGE;
+    }
+    if (!mapSections(loader))
+    {
+        return ERR_LOADER_MAP_SECTIONS;
+    }
+    if (!fixRelocTable(loader))
+    {
+        return ERR_LOADER_FIX_RELOC_TABLE;
+    }
+    if (!processIAT(loader))
+    {
+        return ERR_LOADER_PROCESS_IAT;
+    }
+    return NO_ERROR;
+}
+
 static bool parsePEImage(PELoader* loader)
 {
     uintptr imageAddr = (uintptr)(loader->Config.Image);
@@ -247,7 +259,7 @@ static bool mapSections(PELoader* runtime)
         uint32 sizeOfRawData = *(uint32*)(section + 16);
         uint32 pointerToRawData = *(uint32*)(section + 20);
         byte*  dst = (byte*)(peImage + virtualAddress);
-        byte*  src = (byte*)(runtime->ImageAddr + pointerToRawData);
+        byte*  src = (byte*)(imageAddr + pointerToRawData);
         mem_copy(dst, src, sizeOfRawData);
         section += PE_SECTION_HEADER_SIZE;
     }
@@ -279,8 +291,8 @@ static bool fixRelocTable(PELoader* runtime)
         uintptr dstAddr = peImage + baseReloc->VirtualAddress;
         for (uint32 i = 0; i < (baseReloc->SizeOfBlock - 8) / 2; i++)
         {
-            uint16 info = *(uint16*)(infoPtr);
-            uint16 type = info >> 12;
+            uint16 info   = *(uint16*)(infoPtr);
+            uint16 type   = info >> 12;
             uint16 offset = info & 0xFFF;
 
             uint32* patchAddr32;
