@@ -136,112 +136,62 @@ static void* allocLoaderMemPage(PELoader_Cfg* cfg)
     return addr;
 }
 
-static bool initLoaderAPI(PELoader* runtime)
+static bool initLoaderAPI(PELoader* loader)
 {
-    #ifdef _WIN64
-    uint64 hash = 0xB6A1D0D4A275D4B6;
-    uint64 key  = 0x64CB4D66EC0BEFD9;
-    #elif _WIN32
-    uint32 hash = 0xC3DE112E;
-    uint32 key  = 0x8D9EA74F;
-    #endif
-    VirtualAlloc_t virtualAlloc = (VirtualAlloc_t)FindAPI(hash, key);
-    if (virtualAlloc == NULL)
+    typedef struct { 
+        uint hash; uint key; void* proc;
+    } winapi;
+    winapi list[] =
+#ifdef _WIN64
     {
-        return false;
-    }
-    #ifdef _WIN64
-    hash = 0xB82F958E3932DE49;
-    key  = 0x1CA95AA0C4E69F35;
-    #elif _WIN32
-    hash = 0xFE192059;
-    key  = 0x397FD02C;
-    #endif
-    VirtualFree_t virtualFree = (VirtualFree_t)FindAPI(hash, key);
-    if (virtualFree == NULL)
+        { 0x21E5E7E61968BBF4, 0x38FC2BB8B9E8F0B1 },  // VirtualAlloc
+        { 0x7DDAB5BF4E742736, 0x6E0D1E4F5D19BE67 },  // VirtualFree
+        { 0x6CF439115B558DE1, 0x7CAC9554D5A67E28 },  // VirtualProtect
+        { 0x90BD05BA72DD948C, 0x253672CEAE439BB6 },  // LoadLibraryA
+        { 0xF4E6DE881A59F6A0, 0xBC2E958CCBE70AA2 },  // GetProcAddress
+        { 0x62E83480AE0AAFC7, 0x86C0AECD3EF92256 },  // CreateThread
+        { 0xE8CA42297DA7319C, 0xAC51BC3A630A84FC },  // FlushInstructionCache
+        { 0x04A85D44E64689B3, 0xBB2834EF8BE725C9 },  // CreateMutexA
+        { 0x5B84A4B6173E4B44, 0x089FC914B21A66DA },  // ReleaseMutex
+        { 0x91BB0A2A34E70890, 0xB2307F73C72A83BD },  // WaitForSingleObject
+        { 0xB23064DF64282DE1, 0xD62F5C65075FCCE8 },  // CloseHandle
+    };
+#elif _WIN32
     {
-        return false;
-    }
-    #ifdef _WIN64
-    hash = 0x8CDC3CBC1ABF3F5F;
-    key  = 0xC3AEEDC9843D7B34;
-    #elif _WIN32
-    hash = 0xD41DCE2B;
-    key  = 0xEB37C512;
-    #endif
-    VirtualProtect_t virtualProtect = (VirtualProtect_t)FindAPI(hash, key);
-    if (virtualProtect == NULL)
+        { 0x28310500, 0x51C40B22 },  // VirtualAlloc
+        { 0xBC28097D, 0x4483038A },  // VirtualFree
+        { 0x7B578622, 0x6950410A },  // VirtualProtect
+        { 0x3DAF1E96, 0xD7E436F3 },  // LoadLibraryA
+        { 0xE971801A, 0xEC6F6D90 },  // GetProcAddress
+        { 0xD1AFE117, 0xDA772D98 },  // CreateThread
+        { 0x73AFF9EE, 0x16AA8D66 },  // FlushInstructionCache
+        { 0xFF3A4BBB, 0xD2F55A75 },  // CreateMutexA
+        { 0x30B41C8C, 0xDD13B99D },  // ReleaseMutex
+        { 0x4DF94300, 0x85D5CD6F },  // WaitForSingleObject
+        { 0x7DC545BC, 0xCBD67153 },  // CloseHandle
+    };
+#endif
+    for (int i = 0; i < arrlen(list); i++)
     {
-        return false;
+        void* proc = loader->Config.FindAPI(list[i].hash, list[i].key);
+        if (proc == NULL)
+        {
+            return false;
+        }
+        list[i].proc = proc;
     }
-    #ifdef _WIN64
-    hash = 0xC0B89BE712EE4C18;
-    key  = 0xF80CA8B02538CAC4;
-    #elif _WIN32
-    hash = 0xCCB2E46E;
-    key  = 0xAEB5A665;
-    #endif
-    LoadLibraryA_t loadLibraryA = (LoadLibraryA_t)FindAPI(hash, key);
-    if (loadLibraryA == NULL)
-    {
-        return false;
-    }
-    #ifdef _WIN64
-    hash = 0xC22B47E9D652D287;
-    key  = 0xA118770E82EB0797;
-    #elif _WIN32
-    hash = 0x2C1F810D;
-    key  = 0xCB356B02;
-    #endif
-    FreeLibrary_t freeLibrary = (FreeLibrary_t)FindAPI(hash, key);
-    if (freeLibrary == NULL)
-    {
-        return false;
-    }
-    #ifdef _WIN64
-    hash = 0xB1AE911EA1306CE1;
-    key  = 0x39A9670E629C64EA;
-    #elif _WIN32
-    hash = 0x5B4DC502;
-    key  = 0xC2CC2C19;
-    #endif
-    GetProcAddress_t getProcAddress = (GetProcAddress_t)FindAPI(hash, key);
-    if (getProcAddress == NULL)
-    {
-        return false;
-    }
-    #ifdef _WIN64
-    hash = 0x8172B49F66E495BA;
-    key  = 0x8F0D0796223B56C2;
-    #elif _WIN32
-    hash = 0x87A2CEE8;
-    key  = 0x42A3C1AF;
-    #endif
-    FlushInstructionCache_t flushInstCache = (FlushInstructionCache_t)FindAPI(hash, key);
-    if (flushInstCache == NULL)
-    {
-        return false;
-    }
-    #ifdef _WIN64
-    hash = 0x134459F9F9668FC1;
-    key  = 0xB2877C84F94DB5D8;
-    #elif _WIN32
-    hash = 0x8DF47CDE;
-    key  = 0x17656962;
-    #endif
-    CreateThread_t createThread = (CreateThread_t)FindAPI(hash, key);
-    if (createThread == NULL)
-    {
-        return false;
-    }
-    runtime->VirtualAlloc          = virtualAlloc;
-    runtime->VirtualProtect        = virtualProtect;
-    runtime->VirtualFree           = virtualFree;
-    runtime->LoadLibraryA          = loadLibraryA;
-    runtime->FreeLibrary           = freeLibrary;
-    runtime->GetProcAddress        = getProcAddress;
-    runtime->FlushInstructionCache = flushInstCache;
-    runtime->CreateThread          = createThread;
+
+    loader->VirtualAlloc          = list[0x00].proc;
+    loader->VirtualFree           = list[0x01].proc;
+    loader->VirtualProtect        = list[0x02].proc;
+    loader->LoadLibraryA          = list[0x03].proc;
+    loader->GetProcAddress        = list[0x04].proc;
+    loader->CreateThread          = list[0x05].proc;
+    loader->FlushInstructionCache = list[0x06].proc;
+    loader->CreateMutexA          = list[0x07].proc;
+    loader->ReleaseMutex          = list[0x08].proc;
+    loader->WaitForSingleObject   = list[0x09].proc;
+    loader->CloseHandle           = list[0x0A].proc;
     return true;
 }
 
