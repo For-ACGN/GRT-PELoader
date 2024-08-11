@@ -37,6 +37,9 @@ typedef struct {
     uintptr ImageBase;
     uint32  ImageSize;
     uintptr ImportTable;
+
+    // write return value
+    uint* ExitCode;
 } PELoader;
 
 static void* allocLoaderMemPage(PELoader_Cfg* cfg);
@@ -76,12 +79,12 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     errno errno = NO_ERROR;
     for (;;)
     {
-        if (!initLoaderAPI(&loader))
+        if (!initLoaderAPI(loader))
         {
             errno = ERR_LOADER_INIT_API;
             break;
         }
-        errno = loadPEImage(&loader);
+        errno = loadPEImage(loader);
         if (errno != NO_ERROR)
         {
             break;
@@ -95,11 +98,13 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     }
     // create methods for loader
     PELoader_M* module = (PELoader_M*)moduleAddr;
-    // core variable and return value
-    module->EntryPoint;
+    // process variables
+    module->EntryPoint = (void*)(loader->PEImage + loader->EntryPoint);
     // loader module methods
     module->Execute;
     module->Destroy;
+    // record return value pointer;
+    loader->ExitCode = &module->ExitCode;
     return module;
 }
 
@@ -241,13 +246,14 @@ static bool parsePEImage(PELoader* loader)
 
 static bool mapSections(PELoader* loader)
 {
-    // allocate memory for PE image
-    uint32 imageSize = loader->ImageSize;
-    uintptr peImage = loader->VirtualAlloc(0, imageSize, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (peImage == NULL)
+    // allocate memory for write PE image
+    uint32 size = loader->ImageSize;
+    void* mem = loader->VirtualAlloc(0, size, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (mem == NULL)
     {
         return false;
     }
+    uintptr peImage = (uintptr)mem;
     // map PE image sections to the memory
     uintptr imageAddr = (uintptr)(loader->Config.Image);
     uint32  peOffset  = loader->PEOffset;
@@ -268,13 +274,13 @@ static bool mapSections(PELoader* loader)
     return true;
 }
 
-static bool fixRelocTable(PELoader* runtime)
+static bool fixRelocTable(PELoader* loader)
 {
-    uintptr peImage = runtime->PEImage;
-    uintptr dataDir = runtime->DataDir;
+    uintptr peImage = loader->PEImage;
+    uintptr dataDir = loader->DataDir;
     uintptr relocTable = peImage + *(uint32*)(dataDir + 5*PE_DATA_DIRECTORY_SIZE);
     uint32  tableSize = *(uint32*)(dataDir + 5*PE_DATA_DIRECTORY_SIZE + 4);
-    uint64  addressOffset = (int64)(runtime->PEImage) - (int64)(runtime->ImageBase);
+    uint64  addressOffset = (int64)(loader->PEImage) - (int64)(loader->ImageBase);
     // check need relocation
     if (tableSize == 0)
     {
@@ -320,10 +326,10 @@ static bool fixRelocTable(PELoader* runtime)
     return true;
 }
 
-static bool processIAT(PELoader* runtime)
+static bool processIAT(PELoader* loader)
 {
-    uintptr peImage = runtime->PEImage;
-    uintptr dataDir = runtime->DataDir;
+    uintptr peImage = loader->PEImage;
+    uintptr dataDir = loader->DataDir;
     uintptr importTable = peImage + *(uint32*)(dataDir + 1*PE_DATA_DIRECTORY_SIZE);
     // calculate the number of the library
     PE_ImportDirectory* importDir;
@@ -349,10 +355,9 @@ static bool processIAT(PELoader* runtime)
             break;
         }
         LPCSTR dllName = (LPCSTR)(peImage + importDir->Name);
-        HMODULE hModule = runtime->LoadLibraryA(dllName);
+        HMODULE hModule = loader->LoadLibraryA(dllName);
         if (hModule == NULL)
         {
-            // TODO release loaded library
             return false;
         }
         uintptr srcThunk;
@@ -383,7 +388,7 @@ static bool processIAT(PELoader* runtime)
             } else {
                 procName = (LPCSTR)(peImage + value + 2);
             }
-            uintptr proc = runtime->GetProcAddress(hModule, procName);
+            uintptr proc = loader->GetProcAddress(hModule, procName);
             if (proc == NULL)
             {
                 return false;
@@ -394,26 +399,26 @@ static bool processIAT(PELoader* runtime)
         }
         table += PE_IMPORT_DIRECTORY_SIZE;
     }
-    runtime->ImportTable = importTable;
+    loader->ImportTable = importTable;
     return true;
 }
 
-static bool callEntryPoint(PELoader* runtime)
+static bool callEntryPoint(PELoader* loader)
 {
-    uintptr peImage    = runtime->PEImage;
-    uint32  imageSize  = runtime->ImageSize;
-    uintptr entryPoint = runtime->EntryPoint;
+    uintptr peImage    = loader->PEImage;
+    uint32  imageSize  = loader->ImageSize;
+    uintptr entryPoint = loader->EntryPoint;
     // change image memory protect for execute
     uint32 oldProtect;
-    if (!runtime->VirtualProtect(peImage, imageSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+    if (!loader->VirtualProtect(peImage, imageSize, PAGE_EXECUTE_READWRITE, &oldProtect))
     {
         return false;
     }
     // flush instruction cache
-    if (!runtime->FlushInstructionCache(-1, peImage, imageSize))
+    if (!loader->FlushInstructionCache(-1, peImage, imageSize))
     {
         return false;
     }
-    runtime->ExitCode = ((uint(*)())(peImage + entryPoint))();
+    loader->ExitCode = ((uint(*)())(peImage + entryPoint))();
     return true;
 }
