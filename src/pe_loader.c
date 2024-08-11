@@ -8,18 +8,20 @@
 #define MAIN_MEM_PAGE_SIZE 4096
 
 typedef struct {
-    // Arguments
-    uintptr ImageAddr;
+    // store config from argument
+    PELoader_Cfg Config;
 
     // API addresses
     VirtualAlloc_t          VirtualAlloc;
     VirtualFree_t           VirtualFree;
     VirtualProtect_t        VirtualProtect;
     LoadLibraryA_t          LoadLibraryA;
-    FreeLibrary_t           FreeLibrary;
     GetProcAddress_t        GetProcAddress;
     FlushInstructionCache_t FlushInstructionCache;
     CreateThread_t          CreateThread;
+
+    // runtime data
+    void* MainMemPage; // store all structures
 
     // PE image information
     uintptr PEImage;
@@ -37,7 +39,7 @@ typedef struct {
     uintptr Debug;
 } PELoader;
 
-static void* allocateLoaderMemory(PELoader_Cfg* cfg);
+static void* allocLoaderMemPage(PELoader_Cfg* cfg);
 static bool  initLoaderAPI(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  mapPESections(PELoader* loader);
@@ -53,7 +55,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
         return NULL;
     }
     // alloc memory for store loader structure
-    void* memPage = allocateLoaderMemory(cfg);
+    void* memPage = allocLoaderMemPage(cfg);
     if (memPage == NULL)
     {
         SetLastErrno(ERR_LOADER_ALLOC_MEMORY);
@@ -66,48 +68,35 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     // initialize structure
     PELoader* loader = (PELoader*)loaderAddr;
     mem_clean(loader, sizeof(PELoader));
-    // store runtime options
-
-    PELoader runtime = {
-        .ImageAddr = address,
-        .Options   = opts,
-
-        // ignore Visual Studio bug fix
-        .VirtualAlloc   = (VirtualAlloc_t)1,
-        .VirtualFree    = (VirtualFree_t)1,
-        .VirtualProtect = (VirtualProtect_t)1,
-        .LoadLibraryA   = (LoadLibraryA_t)1,
-        .FreeLibrary    = (FreeLibrary_t)1,
-        .GetProcAddress = (GetProcAddress_t)1,
-        .FlushInstructionCache = (FlushInstructionCache_t)1,
-        .CreateThread   = (CreateThread_t)1,
-    };
-    if (!initAPI(&runtime))
+    // store config and context
+    loader->Config = *cfg;
+    loader->MainMemPage = memPage;
+    if (!initLoaderAPI(&loader))
     {
         return NULL;
     }
-    runtime.GetProcAddress = opts->GetProcAddress;
+    loader.GetProcAddress = opts->GetProcAddress;
 
     for (;;)
     {
-        if (!parsePEImage(&runtime))
+        if (!parsePEImage(&loader))
         {
             break;
         }
-        if (!mapPESections(&runtime))
+        if (!mapPESections(&loader))
         {
             break;
         }
-        if (!fixRelocTable(&runtime))
+        if (!fixRelocTable(&loader))
         {
             break;
         }
-        if (!processIAT(&runtime))
+        if (!processIAT(&loader))
         {
             break;
         }
-        runtime.Debug = (uintptr)(&callEntryPoint);
-        callEntryPoint(&runtime);
+        loader.Debug = (uintptr)(&callEntryPoint);
+        callEntryPoint(&loader);
 
         break;
     }
@@ -120,10 +109,10 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     // 
     // }
     // return runtime.ExitCode;
-    return runtime.Debug;
+    return loader.Debug;
 }
 
-static void* allocateLoaderMemory(PELoader_Cfg* cfg)
+static void* allocLoaderMemPage(PELoader_Cfg* cfg)
 {
 #ifdef _WIN64
     uint hash = 0xEFE2E03329515B77;
@@ -147,8 +136,7 @@ static void* allocateLoaderMemory(PELoader_Cfg* cfg)
     return addr;
 }
 
-// initAPI is used to find API addresses for PE loader.
-static bool initAPI(PELoader* runtime)
+static bool initLoaderAPI(PELoader* runtime)
 {
     #ifdef _WIN64
     uint64 hash = 0xB6A1D0D4A275D4B6;
