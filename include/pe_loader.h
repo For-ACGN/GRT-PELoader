@@ -23,8 +23,11 @@ typedef struct {
 } PELoader_Cfg;
 
 typedef struct {
+    // absolute memory address about PE entry point
     void* EntryPoint;
-    uint  ExitCode;
+
+    // main thread return value or argument about call ExitProcess
+    uint ExitCode;
 
     // create a thread at EntryPoint
     Execute_t Execute;
