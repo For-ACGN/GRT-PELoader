@@ -17,10 +17,14 @@ typedef struct {
     VirtualProtect_t        VirtualProtect;
     LoadLibraryA_t          LoadLibraryA;
     GetProcAddress_t        GetProcAddress;
-    FlushInstructionCache_t FlushInstructionCache;
     CreateThread_t          CreateThread;
+    FlushInstructionCache_t FlushInstructionCache;
+    CreateMutexA_t          CreateMutexA;
+    ReleaseMutex_t          ReleaseMutex;
+    WaitForSingleObject_t   WaitForSingleObject;
+    CloseHandle_t           CloseHandle;
 
-    // runtime data
+    // loader context
     void* MainMemPage; // store all structures
 
     // PE image information
@@ -33,16 +37,12 @@ typedef struct {
     uintptr ImageBase;
     uint32  ImageSize;
     uintptr ImportTable;
-
-    uint ExitCode;
-
-    uintptr Debug;
 } PELoader;
 
 static void* allocLoaderMemPage(PELoader_Cfg* cfg);
 static bool  initLoaderAPI(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
-static bool  mapPESections(PELoader* loader);
+static bool  mapSections(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
 static bool  processIAT(PELoader* loader);
 static bool  callEntryPoint(PELoader* loader);
@@ -71,45 +71,45 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     // store config and context
     loader->Config = *cfg;
     loader->MainMemPage = memPage;
-    if (!initLoaderAPI(&loader))
-    {
-        return NULL;
-    }
-    loader.GetProcAddress = opts->GetProcAddress;
-
+    // initialize loader
+    errno errno = NO_ERROR;
     for (;;)
     {
-        if (!parsePEImage(&loader))
+        if (!initLoaderAPI(&loader))
         {
+            errno = ERR_LOADER_INIT_API;
             break;
         }
-        if (!mapPESections(&loader))
+        if (!parsePEImage(&loader))
         {
+            errno = ERR_LOADER_PARSE_PE_IMAGE;
+            break;
+        }
+        if (!mapSections(&loader))
+        {
+            errno = ERR_LOADER_MAP_SECTIONS;
             break;
         }
         if (!fixRelocTable(&loader))
         {
+            errno = ERR_LOADER_FIX_RELOC_TABLE;
             break;
         }
         if (!processIAT(&loader))
         {
+            errno = ERR_LOADER_PROCESS_IAT;
             break;
         }
-        loader.Debug = (uintptr)(&callEntryPoint);
-        callEntryPoint(&loader);
-
         break;
     }
-    // if (runtime.PEImage != NULL)
-    // {
-    // 
-    // }
-    // else
-    // {
-    // 
-    // }
-    // return runtime.ExitCode;
-    return loader.Debug;
+    // create methods for loader
+    PELoader_M* module = (PELoader_M*)moduleAddr;
+    // core variable and return value
+    module->EntryPoint;
+    // loader module methods
+    module->Execute;
+    module->Destroy;
+    return module;
 }
 
 static void* allocLoaderMemPage(PELoader_Cfg* cfg)
@@ -245,38 +245,39 @@ static bool initLoaderAPI(PELoader* runtime)
     return true;
 }
 
-static bool parsePEImage(PELoader* runtime)
+static bool parsePEImage(PELoader* loader)
 {
-    uintptr imageAddr = runtime->ImageAddr;
-    uint32  peOffset = *(uint32*)(imageAddr + 60);
+    uintptr imageAddr = (uintptr)(loader->Config.Image);
+    uint32  peOffset  = *(uint32*)(imageAddr + 60);
     // parse FileHeader
-    uint16 numSections = *(uint16*)(imageAddr + peOffset + 6);
+    uint16 numSections   = *(uint16*)(imageAddr + peOffset + 6);
     uint16 optHeaderSize = *(uint16*)(imageAddr + peOffset + 20);
     // parse OptionalHeader
-    #ifdef _WIN64
+#ifdef _WIN64
     uint16 ddOffset = PE_OPT_HEADER_SIZE_64 - 16*PE_DATA_DIRECTORY_SIZE;
-    #elif _WIN32
+#elif _WIN32
     uint16 ddOffset = PE_OPT_HEADER_SIZE_32 - 16*PE_DATA_DIRECTORY_SIZE;
-    #endif
+#endif
     uintptr dataDir = imageAddr + peOffset + PE_FILE_HEADER_SIZE + ddOffset;
     uint32  entryPoint = *(uint32*)(imageAddr + peOffset + 40);
-    #ifdef _WIN64
+#ifdef _WIN64
     uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 48);
-    #elif _WIN32
+#elif _WIN32
     uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 52);
-    #endif
+#endif
     uint32  imageSize = *(uint32*)(imageAddr + peOffset + 80);
-    runtime->PEOffset = peOffset;
-    runtime->NumSections = numSections;
-    runtime->OptHeaderSize = optHeaderSize;
-    runtime->DataDir = dataDir;
-    runtime->EntryPoint = entryPoint;
-    runtime->ImageBase = imageBase;
-    runtime->ImageSize = imageSize;
+    // store result
+    loader->PEOffset      = peOffset;
+    loader->NumSections   = numSections;
+    loader->OptHeaderSize = optHeaderSize;
+    loader->DataDir       = dataDir;
+    loader->EntryPoint    = entryPoint;
+    loader->ImageBase     = imageBase;
+    loader->ImageSize     = imageSize;
     return true;
 }
 
-static bool mapPESections(PELoader* runtime)
+static bool mapSections(PELoader* runtime)
 {
     // allocate memory for PE image
     uint32 imageSize = runtime->ImageSize;
