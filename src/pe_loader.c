@@ -89,6 +89,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
         {
             break;
         }
+
         break;
     }
     if (errno != NO_ERROR)
@@ -278,8 +279,9 @@ static bool fixRelocTable(PELoader* loader)
 {
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
-    uintptr relocTable = peImage + *(uint32*)(dataDir + 5*PE_DATA_DIRECTORY_SIZE);
-    uint32  tableSize = *(uint32*)(dataDir + 5*PE_DATA_DIRECTORY_SIZE + 4);
+    uintptr offset = dataDir + (uintptr)(5 * PE_DATA_DIRECTORY_SIZE);
+    uintptr relocTable = peImage + *(uint32*)(offset);
+    uint32 tableSize = *(uint32*)(offset + 4);
     uint64  addressOffset = (int64)(loader->PEImage) - (int64)(loader->ImageBase);
     // check need relocation
     if (tableSize == 0)
@@ -330,7 +332,8 @@ static bool processIAT(PELoader* loader)
 {
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
-    uintptr importTable = peImage + *(uint32*)(dataDir + 1*PE_DATA_DIRECTORY_SIZE);
+    uintptr offset  = dataDir + (uintptr)(1 * PE_DATA_DIRECTORY_SIZE);
+    uintptr importTable = peImage + *(uint32*)(offset);
     // calculate the number of the library
     PE_ImportDirectory* importDir;
     uintptr table = importTable;
@@ -388,12 +391,12 @@ static bool processIAT(PELoader* loader)
             } else {
                 procName = (LPCSTR)(peImage + value + 2);
             }
-            uintptr proc = loader->GetProcAddress(hModule, procName);
+            FARPROC proc = loader->GetProcAddress(hModule, procName);
             if (proc == NULL)
             {
                 return false;
             }
-            *(uintptr*)dstThunk = proc;
+            *(uintptr*)dstThunk = (uintptr)proc;
             srcThunk += sizeof(uintptr);
             dstThunk += sizeof(uintptr);
         }
