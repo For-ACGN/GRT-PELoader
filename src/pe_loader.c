@@ -1,8 +1,10 @@
 #include "c_types.h"
 #include "windows_t.h"
+#include "rel_addr.h"
 #include "lib_memory.h"
 #include "random.h"
 #include "pe_loader.h"
+#include "epilogue.h"
 #include "debug.h"
 
 #define MAIN_MEM_PAGE_SIZE 4096
@@ -25,7 +27,8 @@ typedef struct {
     CloseHandle_t           CloseHandle;
 
     // loader context
-    void* MainMemPage; // store all structures
+    void*  MainMemPage; // store all structures
+    HANDLE hMutex;      // global mutex
 
     // store PE image information
     uintptr PEImage;
@@ -57,6 +60,10 @@ static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
 static bool  processIAT(PELoader* loader);
+static bool  updatePELoaderPointer(PELoader* loader);
+static errno initPELoaderEnvironment(PELoader* loader);
+static bool  flushInstructionCache(PELoader* loader);
+
 static bool  callEntryPoint(PELoader* loader);
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
@@ -102,7 +109,16 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
             errno = ERR_LOADER_UPDATE_PTR;
             break;
         }
+        errno = initPELoaderEnvironment(loader);
+        if (errno != NO_ERROR)
+        {
+            break;
+        }
         break;
+    }
+    if (errno == NO_ERROR && !flushInstructionCache(loader))
+    {
+        errno = ERR_LOADER_FLUSH_INST;
     }
     if (errno != NO_ERROR)
     {
@@ -435,6 +451,34 @@ static bool updatePELoaderPointer(PELoader* loader)
         break;
     }
     return success;
+}
+
+static errno initPELoaderEnvironment(PELoader* loader)
+{
+    // create global mutex
+    HANDLE hMutex = loader->CreateMutexA(NULL, false, NULL);
+    if (hMutex == NULL)
+    {
+        return ERR_LOADER_CREATE_MUTEX;
+    }
+    loader->hMutex = hMutex;
+    // clean useless API functions in runtime structure
+    RandBuf((byte*)(&loader->CreateMutexA), sizeof(uintptr));
+    return NO_ERROR;
+}
+
+static bool flushInstructionCache(PELoader* loader)
+{
+    uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
+    uintptr end   = (uintptr)(GetFuncAddr(&Epilogue));
+    uint    size  = end - begin;
+    if (!loader->FlushInstructionCache(CURRENT_PROCESS, (LPCVOID)begin, size))
+    {
+        return false;
+    }
+    // clean useless API functions in structure
+    RandBuf((byte*)(&loader->VirtualProtect), sizeof(uintptr));
+    return true;
 }
 
 // updatePELoaderPointer will replace hard encode address to the actual address.
