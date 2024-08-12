@@ -29,6 +29,8 @@ typedef const void*   LPCVOID;
 typedef const uint8*  LPCSTR;
 typedef const uint16* LPCWSTR;
 
+#define CURRENT_PROCESS (HANDLE)(-1)
+
 #define MEM_COMMIT  0x00001000
 #define MEM_RESERVE 0x00002000
 #define MEM_RELEASE 0x00008000
