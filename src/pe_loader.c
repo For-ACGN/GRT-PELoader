@@ -42,6 +42,14 @@ typedef struct {
     uint* ExitCode;
 } PELoader;
 
+// hard encoded address in getPELoaderPointer for replacement
+#ifdef _WIN64
+    #define PE_LOADER_POINTER 0x7FABCDEF111111FF
+#elif _WIN32
+    #define PE_LOADER_POINTER 0x7FABCDFF
+#endif
+static PELoader* getPELoaderPointer();
+
 static void* allocLoaderMemPage(PELoader_Cfg* cfg);
 static bool  initLoaderAPI(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
@@ -89,7 +97,11 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
         {
             break;
         }
-
+        if (!updatePELoaderPointer(loader))
+        {
+            errno = ERR_LOADER_UPDATE_PTR;
+            break;
+        }
         break;
     }
     if (errno != NO_ERROR)
@@ -405,6 +417,35 @@ static bool processIAT(PELoader* loader)
     loader->ImportTable = importTable;
     return true;
 }
+
+static bool updatePELoaderPointer(PELoader* loader)
+{
+    bool success = false;
+    uintptr target = (uintptr)(GetFuncAddr(&getPELoaderPointer));
+    for (uintptr i = 0; i < 64; i++)
+    {
+        uintptr* pointer = (uintptr*)(target);
+        if (*pointer != PE_LOADER_POINTER)
+        {
+            target++;
+            continue;
+        }
+        *pointer = (uintptr)loader;
+        success = true;
+        break;
+    }
+    return success;
+}
+
+// updatePELoaderPointer will replace hard encode address to the actual address.
+// Must disable compiler optimize, otherwise updatePELoaderPointer will fail.
+#pragma optimize("", off)
+static PELoader* getPELoaderPointer()
+{
+    uint pointer = PE_LOADER_POINTER;
+    return (PELoader*)(pointer);
+}
+#pragma optimize("", on)
 
 static bool callEntryPoint(PELoader* loader)
 {
