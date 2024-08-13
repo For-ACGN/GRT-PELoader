@@ -23,6 +23,8 @@ typedef void* HANDLE;
 typedef void* FARPROC;
 
 typedef void*   LPVOID;
+typedef uint8*  LPSTR;
+typedef uint16* LPWSTR;
 typedef HANDLE* LPHANDLE;
 
 typedef const void*   LPCVOID;
@@ -55,6 +57,9 @@ typedef const uint16* LPCWSTR;
 #define PE_SECTION_HEADER_SIZE   40
 #define PE_DATA_DIRECTORY_SIZE   8
 #define PE_IMPORT_DIRECTORY_SIZE 20
+
+#define IMAGE_FILE_EXECUTABLE_IMAGE 0x0002
+#define IMAGE_FILE_DLL              0x2000
 
 #define IMAGE_ORDINAL_FLAG64 0x8000000000000000
 #define IMAGE_ORDINAL_FLAG32 0x80000000
