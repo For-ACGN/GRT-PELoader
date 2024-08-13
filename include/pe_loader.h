@@ -12,10 +12,7 @@ typedef struct {
     // PE image memory address
     void* Image;
 
-    // is a DLL PE image
-    bool IsDLL;
-
-    // wait main thread exit
+    // wait main thread exit if it is a exe
     bool Wait;
 
     // use custom FindAPI from Gleam-RT for hook
