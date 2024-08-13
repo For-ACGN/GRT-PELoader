@@ -36,6 +36,7 @@ typedef struct {
     uint32  PEOffset;
     uint16  NumSections;
     uint16  OptHeaderSize;
+    uint16  Characteristics;
     uintptr DataDir;
     uintptr EntryPoint;
     uintptr ImageBase;
@@ -258,15 +259,16 @@ static bool parsePEImage(PELoader* loader)
     uintptr imageAddr = (uintptr)(loader->Config.Image);
     uint32  peOffset  = *(uint32*)(imageAddr + 60);
     // parse FileHeader
-    uint16 numSections   = *(uint16*)(imageAddr + peOffset + 6);
-    uint16 optHeaderSize = *(uint16*)(imageAddr + peOffset + 20);
+    uint16 numSections     = *(uint16*)(imageAddr + peOffset + 6);
+    uint16 optHeaderSize   = *(uint16*)(imageAddr + peOffset + 20);
+    uint16 characteristics = *(uint16*)(imageAddr + peOffset + 22);
     // parse OptionalHeader
 #ifdef _WIN64
     uint16 ddOffset = PE_OPT_HEADER_SIZE_64 - 16 * PE_DATA_DIRECTORY_SIZE;
 #elif _WIN32
     uint16 ddOffset = PE_OPT_HEADER_SIZE_32 - 16 * PE_DATA_DIRECTORY_SIZE;
 #endif
-    uintptr dataDir = imageAddr + peOffset + PE_FILE_HEADER_SIZE + ddOffset;
+    uintptr dataDir    = imageAddr + peOffset + PE_FILE_HEADER_SIZE + ddOffset;
     uint32  entryPoint = *(uint32*)(imageAddr + peOffset + 40);
 #ifdef _WIN64
     uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 48);
@@ -275,13 +277,14 @@ static bool parsePEImage(PELoader* loader)
 #endif
     uint32  imageSize = *(uint32*)(imageAddr + peOffset + 80);
     // store result
-    loader->PEOffset      = peOffset;
-    loader->NumSections   = numSections;
-    loader->OptHeaderSize = optHeaderSize;
-    loader->DataDir       = dataDir;
-    loader->EntryPoint    = entryPoint;
-    loader->ImageBase     = imageBase;
-    loader->ImageSize     = imageSize;
+    loader->PEOffset        = peOffset;
+    loader->NumSections     = numSections;
+    loader->OptHeaderSize   = optHeaderSize;
+    loader->Characteristics = characteristics;
+    loader->DataDir         = dataDir;
+    loader->EntryPoint      = entryPoint;
+    loader->ImageBase       = imageBase;
+    loader->ImageSize       = imageSize;
     return true;
 }
 
@@ -578,7 +581,7 @@ uint LDR_Execute()
     PELoader* loader = getPELoaderPointer();
 
     // TODO DllMain
-    if (loader->Config.IsDLL)
+    if ((loader->Characteristics & IMAGE_FILE_DLL) == IMAGE_FILE_DLL)
     {
         uintptr entryPoint = loader->PEImage + loader->EntryPoint;
         uint    exitCode   = ((uint(*)())(entryPoint))();
