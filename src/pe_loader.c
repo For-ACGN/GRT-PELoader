@@ -29,6 +29,7 @@ typedef struct {
     // loader context
     void*  MainMemPage; // store all structures
     HANDLE hMutex;      // global mutex
+    HANDLE hThread;     // main thread
 
     // store PE image information
     uintptr PEImage;
@@ -44,6 +45,10 @@ typedef struct {
     // write return value
     uint* ExitCode;
 } PELoader;
+
+// PE loader methods
+uint  LDR_Execute();
+errno LDR_Destroy();
 
 // hard encoded address in getPELoaderPointer for replacement
 #ifdef _WIN64
@@ -63,8 +68,6 @@ static bool  processIAT(PELoader* loader);
 static bool  updatePELoaderPointer(PELoader* loader);
 static errno initPELoaderEnvironment(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
-
-static bool  callEntryPoint(PELoader* loader);
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
 {
@@ -130,8 +133,8 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     // process variables
     module->EntryPoint = (void*)(loader->PEImage + loader->EntryPoint);
     // loader module methods
-    module->Execute;
-    module->Destroy;
+    module->Execute = GetFuncAddr(&LDR_Execute);
+    module->Destroy = GetFuncAddr(&LDR_Destroy);
     // record return value pointer;
     loader->ExitCode = &module->ExitCode;
     return module;
@@ -490,6 +493,51 @@ static PELoader* getPELoaderPointer()
     return (PELoader*)(pointer);
 }
 #pragma optimize("", on)
+
+static void pe_main()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    uintptr entryPoint = loader->PEImage + loader->EntryPoint;
+    *loader->ExitCode = ((uint(*)())(entryPoint))();
+}
+
+uint hook_ExitProcess()
+{
+
+}
+
+uint LDR_Execute()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    // TODO DllMain
+    if (loader->Config.IsDLL)
+    {
+        uintptr entryPoint = loader->PEImage + loader->EntryPoint;
+        *loader->ExitCode = ((uint(*)())(entryPoint))();
+        return 0;
+    }
+    void* start = GetFuncAddr(&pe_main);
+    HANDLE hThread = loader->CreateThread(NULL, 0, start, NULL, 0, NULL);
+    if (hThread == NULL)
+    {
+        return 1;
+    }
+    loader->hThread = hThread;
+    if (!loader->Config.Wait)
+    {
+        return 0;
+    }
+    loader->WaitForSingleObject(hThread, INFINITE);
+    return *loader->ExitCode;
+}
+
+errno LDR_Destroy()
+{
+    PELoader* loader = getPELoaderPointer();
+
+}
 
 static bool callEntryPoint(PELoader* loader)
 {
