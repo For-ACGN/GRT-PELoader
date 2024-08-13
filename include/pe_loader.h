@@ -16,7 +16,7 @@ typedef struct {
     bool IsDLL;
 
     // wait main thread exit
-    bool WaitMainThread;
+    bool Wait;
 
     // use custom FindAPI from Gleam-RT for hook
     FindAPI_t FindAPI;
