@@ -69,6 +69,15 @@ static bool  updatePELoaderPointer(PELoader* loader);
 static errno initPELoaderEnvironment(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
 
+static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
+static void  set_exit_code(uint code);
+static uint  get_exit_code();
+static void  pe_entry_point();
+
+static LPSTR  hook_GetCommandLineA();
+static LPWSTR hook_GetCommandLineW();
+static uint   hook_ExitProcess();
+
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
 {
     if (!InitDebugger())
@@ -422,7 +431,7 @@ static bool processIAT(PELoader* loader)
             } else {
                 procName = (LPCSTR)(peImage + value + 2);
             }
-            FARPROC proc = loader->GetProcAddress(hModule, procName);
+            void* proc = ldr_GetProcAddress(hModule, procName);
             if (proc == NULL)
             {
                 return false;
@@ -508,26 +517,59 @@ static LPSTR hook_GetCommandLineA()
 }
 
 __declspec(noinline)
-static LPWSTR ldr_GetCommandLineW()
+static LPWSTR hook_GetCommandLineW()
 {
     PELoader* loader = getPELoaderPointer();
 
 }
 
 __declspec(noinline)
-static uint ldr_ExitProcess()
+static uint hook_ExitProcess()
 {
     PELoader* loader = getPELoaderPointer();
 
 }
 
 __declspec(noinline)
-static void pe_main()
+static void pe_entry_point()
 {
     PELoader* loader = getPELoaderPointer();
 
     uintptr entryPoint = loader->PEImage + loader->EntryPoint;
-    *loader->ExitCode = ((uint(*)())(entryPoint))();
+    uint    exitCode   = ((uint(*)())(entryPoint))();
+    set_exit_code(exitCode);
+}
+
+static void set_exit_code(uint code)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    if (loader->WaitForSingleObject(loader->hMutex, INFINITE) != WAIT_OBJECT_0)
+    {
+        return;
+    }
+
+    *loader->ExitCode = code;
+
+    loader->ReleaseMutex(loader->hMutex);
+}
+
+static uint get_exit_code()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    if (loader->WaitForSingleObject(loader->hMutex, INFINITE) != WAIT_OBJECT_0)
+    {
+        return 2;
+    }
+
+    uint code = *loader->ExitCode;
+
+    if (!loader->ReleaseMutex(loader->hMutex))
+    {
+        return 2;
+    }
+    return code;
 }
 
 __declspec(noinline)
@@ -539,10 +581,11 @@ uint LDR_Execute()
     if (loader->Config.IsDLL)
     {
         uintptr entryPoint = loader->PEImage + loader->EntryPoint;
-        *loader->ExitCode = ((uint(*)())(entryPoint))();
-        return 0;
+        uint    exitCode   = ((uint(*)())(entryPoint))();
+        set_exit_code(exitCode);
+        return exitCode;
     }
-    void* start = GetFuncAddr(&pe_main);
+    void* start = GetFuncAddr(&pe_entry_point);
     HANDLE hThread = loader->CreateThread(NULL, 0, start, NULL, 0, NULL);
     if (hThread == NULL)
     {
@@ -554,7 +597,7 @@ uint LDR_Execute()
         return 0;
     }
     loader->WaitForSingleObject(hThread, INFINITE);
-    return *loader->ExitCode;
+    return get_exit_code();
 }
 
 __declspec(noinline)
