@@ -494,6 +494,34 @@ static PELoader* getPELoaderPointer()
 }
 #pragma optimize("", on)
 
+__declspec(noinline)
+void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
+{
+    
+}
+
+__declspec(noinline)
+static LPSTR hook_GetCommandLineA()
+{
+    PELoader* loader = getPELoaderPointer();
+
+}
+
+__declspec(noinline)
+static LPWSTR ldr_GetCommandLineW()
+{
+    PELoader* loader = getPELoaderPointer();
+
+}
+
+__declspec(noinline)
+static uint ldr_ExitProcess()
+{
+    PELoader* loader = getPELoaderPointer();
+
+}
+
+__declspec(noinline)
 static void pe_main()
 {
     PELoader* loader = getPELoaderPointer();
@@ -502,11 +530,7 @@ static void pe_main()
     *loader->ExitCode = ((uint(*)())(entryPoint))();
 }
 
-uint hook_ExitProcess()
-{
-
-}
-
+__declspec(noinline)
 uint LDR_Execute()
 {
     PELoader* loader = getPELoaderPointer();
@@ -533,28 +557,10 @@ uint LDR_Execute()
     return *loader->ExitCode;
 }
 
+__declspec(noinline)
 errno LDR_Destroy()
 {
     PELoader* loader = getPELoaderPointer();
 
-}
-
-static bool callEntryPoint(PELoader* loader)
-{
-    uintptr peImage    = loader->PEImage;
-    uint32  imageSize  = loader->ImageSize;
-    uintptr entryPoint = loader->EntryPoint;
-    // change image memory protect for execute
-    uint32 oldProtect;
-    if (!loader->VirtualProtect(peImage, imageSize, PAGE_EXECUTE_READWRITE, &oldProtect))
-    {
-        return false;
-    }
-    // flush instruction cache
-    if (!loader->FlushInstructionCache(-1, peImage, imageSize))
-    {
-        return false;
-    }
-    loader->ExitCode = ((uint(*)())(peImage + entryPoint))();
-    return true;
+    return NO_ERROR;
 }
