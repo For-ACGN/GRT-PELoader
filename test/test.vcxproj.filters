@@ -50,6 +50,9 @@
     <ClCompile Include="random_test.c">
       <Filter>Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\win_api.c">
+      <Filter>Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="test.h">
@@ -89,6 +92,9 @@
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="..\include\random.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\win_api.h">
       <Filter>Header</Filter>
     </ClInclude>
   </ItemGroup>

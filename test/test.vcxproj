@@ -19,7 +19,8 @@
     <ClInclude Include="..\include\lib_string.h" />
     <ClInclude Include="..\include\rel_addr.h" />
     <ClInclude Include="..\include\hash_api.h" />
-	<ClInclude Include="..\include\random.h" />
+	<ClInclude Include="..\include\win_api.h" />
+    <ClInclude Include="..\include\random.h" />
     <ClInclude Include="..\include\errno.h" />
     <ClInclude Include="..\include\pe_loader.h" />
     <ClInclude Include="..\include\debug.h" />
@@ -28,14 +29,15 @@
   <ItemGroup>
     <ClCompile Include="test_main.c" />
     <ClCompile Include="lib_string_test.c" />
-	<ClCompile Include="random_test.c" />
+    <ClCompile Include="random_test.c" />
     <ClCompile Include="pe_loader_test.c" />
     <ClCompile Include="..\src\pe_loader.c" />
     <ClCompile Include="..\src\lib_memory.c" />
     <ClCompile Include="..\src\lib_string.c" />
     <ClCompile Include="..\src\rel_addr.c" />
     <ClCompile Include="..\src\hash_api.c" />
-	<ClCompile Include="..\src\random.c" />
+	<ClCompile Include="..\src\win_api.c" />
+    <ClCompile Include="..\src\random.c" />
     <ClCompile Include="..\src\errno.c" />
     <ClCompile Include="..\src\debug.c" />
   </ItemGroup>
