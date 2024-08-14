@@ -26,6 +26,9 @@ typedef struct {
     ReleaseMutex_t          ReleaseMutex;
     WaitForSingleObject_t   WaitForSingleObject;
     CloseHandle_t           CloseHandle;
+    GetCommandLineA_t       GetCommandLineA;
+    GetCommandLineW_t       GetCommandLineW;
+    ExitProcess_t           ExitProcess;
 
     // loader context
     void*  MainMemPage; // store all structures
@@ -79,7 +82,7 @@ static void  pe_entry_point();
 
 static LPSTR  hook_GetCommandLineA();
 static LPWSTR hook_GetCommandLineW();
-static uint   hook_ExitProcess();
+static void   hook_ExitProcess(UINT uExitCode);
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
 {
@@ -143,7 +146,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     // create methods for loader
     PELoader_M* module = (PELoader_M*)moduleAddr;
     // process variables
-    module->EntryPoint = (void*)(loader->PEImage + loader->EntryPoint);
+    module->EntryPoint = (void*)(loader->EntryPoint);
     // loader module methods
     module->Execute = GetFuncAddr(&LDR_Execute);
     module->Destroy = GetFuncAddr(&LDR_Destroy);
@@ -184,31 +187,37 @@ static bool initLoaderAPI(PELoader* loader)
     winapi list[] =
 #ifdef _WIN64
     {
-        { 0x21E5E7E61968BBF4, 0x38FC2BB8B9E8F0B1 },  // VirtualAlloc
-        { 0x7DDAB5BF4E742736, 0x6E0D1E4F5D19BE67 },  // VirtualFree
-        { 0x6CF439115B558DE1, 0x7CAC9554D5A67E28 },  // VirtualProtect
-        { 0x90BD05BA72DD948C, 0x253672CEAE439BB6 },  // LoadLibraryA
-        { 0xF4E6DE881A59F6A0, 0xBC2E958CCBE70AA2 },  // GetProcAddress
-        { 0x62E83480AE0AAFC7, 0x86C0AECD3EF92256 },  // CreateThread
-        { 0xE8CA42297DA7319C, 0xAC51BC3A630A84FC },  // FlushInstructionCache
-        { 0x04A85D44E64689B3, 0xBB2834EF8BE725C9 },  // CreateMutexA
-        { 0x5B84A4B6173E4B44, 0x089FC914B21A66DA },  // ReleaseMutex
-        { 0x91BB0A2A34E70890, 0xB2307F73C72A83BD },  // WaitForSingleObject
-        { 0xB23064DF64282DE1, 0xD62F5C65075FCCE8 },  // CloseHandle
+        { 0x21E5E7E61968BBF4, 0x38FC2BB8B9E8F0B1 }, // VirtualAlloc
+        { 0x7DDAB5BF4E742736, 0x6E0D1E4F5D19BE67 }, // VirtualFree
+        { 0x6CF439115B558DE1, 0x7CAC9554D5A67E28 }, // VirtualProtect
+        { 0x90BD05BA72DD948C, 0x253672CEAE439BB6 }, // LoadLibraryA
+        { 0xF4E6DE881A59F6A0, 0xBC2E958CCBE70AA2 }, // GetProcAddress
+        { 0x62E83480AE0AAFC7, 0x86C0AECD3EF92256 }, // CreateThread
+        { 0xE8CA42297DA7319C, 0xAC51BC3A630A84FC }, // FlushInstructionCache
+        { 0x04A85D44E64689B3, 0xBB2834EF8BE725C9 }, // CreateMutexA
+        { 0x5B84A4B6173E4B44, 0x089FC914B21A66DA }, // ReleaseMutex
+        { 0x91BB0A2A34E70890, 0xB2307F73C72A83BD }, // WaitForSingleObject
+        { 0xB23064DF64282DE1, 0xD62F5C65075FCCE8 }, // CloseHandle
+        { 0xEF31896F2FACEC04, 0x0E670990125E8E48 }, // GetCommandLineA
+        { 0x701EF754FFADBDC2, 0x6D5BE783B0AF5812 }, // GetCommandLineW
+        { 0x131A9BBD85CB5E0D, 0x5126E3CBD1E0DB9A }, // ExitProcess
     };
 #elif _WIN32
     {
-        { 0x28310500, 0x51C40B22 },  // VirtualAlloc
-        { 0xBC28097D, 0x4483038A },  // VirtualFree
-        { 0x7B578622, 0x6950410A },  // VirtualProtect
-        { 0x3DAF1E96, 0xD7E436F3 },  // LoadLibraryA
-        { 0xE971801A, 0xEC6F6D90 },  // GetProcAddress
-        { 0xD1AFE117, 0xDA772D98 },  // CreateThread
-        { 0x73AFF9EE, 0x16AA8D66 },  // FlushInstructionCache
-        { 0xFF3A4BBB, 0xD2F55A75 },  // CreateMutexA
-        { 0x30B41C8C, 0xDD13B99D },  // ReleaseMutex
-        { 0x4DF94300, 0x85D5CD6F },  // WaitForSingleObject
-        { 0x7DC545BC, 0xCBD67153 },  // CloseHandle
+        { 0x28310500, 0x51C40B22 }, // VirtualAlloc
+        { 0xBC28097D, 0x4483038A }, // VirtualFree
+        { 0x7B578622, 0x6950410A }, // VirtualProtect
+        { 0x3DAF1E96, 0xD7E436F3 }, // LoadLibraryA
+        { 0xE971801A, 0xEC6F6D90 }, // GetProcAddress
+        { 0xD1AFE117, 0xDA772D98 }, // CreateThread
+        { 0x73AFF9EE, 0x16AA8D66 }, // FlushInstructionCache
+        { 0xFF3A4BBB, 0xD2F55A75 }, // CreateMutexA
+        { 0x30B41C8C, 0xDD13B99D }, // ReleaseMutex
+        { 0x4DF94300, 0x85D5CD6F }, // WaitForSingleObject
+        { 0x7DC545BC, 0xCBD67153 }, // CloseHandle
+        { 0xA187476E, 0x5AF922F3 }, // GetCommandLineA
+        { 0xC15EF07A, 0x47A945CE }, // GetCommandLineW
+        { 0x0C5D0A6C, 0xDB58404D }, // ExitProcess
     };
 #endif
     for (int i = 0; i < arrlen(list); i++)
@@ -232,6 +241,9 @@ static bool initLoaderAPI(PELoader* loader)
     loader->ReleaseMutex          = list[0x08].proc;
     loader->WaitForSingleObject   = list[0x09].proc;
     loader->CloseHandle           = list[0x0A].proc;
+    loader->GetCommandLineA       = list[0x0B].proc;
+    loader->GetCommandLineW       = list[0x0C].proc;
+    loader->ExitProcess           = list[0x0D].proc;
     return true;
 }
 
@@ -317,6 +329,8 @@ static bool mapSections(PELoader* loader)
     }
     // record image memory address
     loader->PEImage = peImage;
+    // update EntryPoint
+    loader->EntryPoint += peImage;
     return true;
 }
 
@@ -572,7 +586,7 @@ static LPSTR hook_GetCommandLineA()
 {
     PELoader* loader = getPELoaderPointer();
 
-    // loader->Config.FindAPI();
+    return loader->GetCommandLineA();
 }
 
 __declspec(noinline)
@@ -580,13 +594,17 @@ static LPWSTR hook_GetCommandLineW()
 {
     PELoader* loader = getPELoaderPointer();
 
+    return loader->GetCommandLineW();
 }
 
 __declspec(noinline)
-static uint hook_ExitProcess()
+static void hook_ExitProcess(UINT uExitCode)
 {
     PELoader* loader = getPELoaderPointer();
 
+    set_exit_code(uExitCode);
+
+    loader->ExitProcess(uExitCode);
 }
 
 __declspec(noinline)
@@ -594,9 +612,8 @@ static void pe_entry_point()
 {
     PELoader* loader = getPELoaderPointer();
 
-    uintptr entryPoint = loader->PEImage + loader->EntryPoint;
-    uint    exitCode   = ((uint(*)())(entryPoint))();
-    set_exit_code(exitCode);
+    uint exitCode = ((uint(*)())(loader->EntryPoint))();
+    hook_ExitProcess(exitCode);
 }
 
 static void set_exit_code(uint code)
@@ -639,8 +656,7 @@ uint LDR_Execute()
     // TODO DllMain
     if ((loader->Characteristics & IMAGE_FILE_DLL) == IMAGE_FILE_DLL)
     {
-        uintptr entryPoint = loader->PEImage + loader->EntryPoint;
-        uint    exitCode   = ((uint(*)())(entryPoint))();
+        uint exitCode = ((uint(*)())(loader->EntryPoint))();
         set_exit_code(exitCode);
         return exitCode;
     }
