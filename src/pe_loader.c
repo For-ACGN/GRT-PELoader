@@ -3,6 +3,7 @@
 #include "rel_addr.h"
 #include "lib_memory.h"
 #include "random.h"
+#include "win_api.h"
 #include "pe_loader.h"
 #include "epilogue.h"
 #include "debug.h"
@@ -71,6 +72,7 @@ static errno initPELoaderEnvironment(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
 
 static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
+static void* getPELoaderMethods(byte* module, LPCSTR lpProcName);
 static void  set_exit_code(uint code);
 static uint  get_exit_code();
 static void  pe_entry_point();
@@ -509,7 +511,60 @@ static PELoader* getPELoaderPointer()
 __declspec(noinline)
 void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 {
-    
+    PELoader* loader = getPELoaderPointer();
+
+    // use "mem_clean" for prevent incorrect compiler
+    // optimize and generate incorrect shellcode
+    byte module[MAX_PATH];
+    mem_clean(&module, sizeof(module));
+    // get module file name
+    if (GetModuleFileName(hModule, &module[0], sizeof(module)) == 0)
+    {
+        return NULL;
+    }
+    // check is internal methods
+    void* method = getPELoaderMethods(&module[0], lpProcName);
+    if (method != NULL)
+    {
+        return method;
+    }
+    // generate key for calculate Windows API hash
+    uint key  = RandUint((uint64)(hModule) + (uint64)(lpProcName));
+    uint hash = HashAPI_W((uint16*)(&module[0]), (byte*)lpProcName, key);
+    return loader->Config.FindAPI(hash, key);
+}
+
+static void* getPELoaderMethods(byte* module, LPCSTR lpProcName)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    typedef struct {
+        uint hash; uint key; void* method;
+    } method;
+    method methods[] =
+#ifdef _WIN64
+    {
+        { 0xA23FAC0E6398838A, 0xE4990D7D4933EE6A, GetFuncAddr(&hook_GetCommandLineA) },
+        { 0xABD1E8F0D28E9F46, 0xAF34F5979D300C70, GetFuncAddr(&hook_GetCommandLineW) },
+        { 0xC9C5D350BB118FAE, 0x061A602F681F2636, GetFuncAddr(&hook_ExitProcess) },
+    };
+#elif _WIN32
+    {
+        { 0xA23FAC0E6398838A, 0xE4990D7D4933EE6A, GetFuncAddr(&hook_GetCommandLineA) },
+        { 0xABD1E8F0D28E9F46, 0xAF34F5979D300C70, GetFuncAddr(&hook_GetCommandLineW) },
+        { 0xC9C5D350BB118FAE, 0x061A602F681F2636, GetFuncAddr(&hook_ExitProcess) },
+    };
+#endif
+    for (int i = 0; i < arrlen(methods); i++)
+    {
+        uint hash = HashAPI_W((uint16*)module, (byte*)lpProcName, methods[i].key);
+        if (hash != methods[i].hash)
+        {
+            continue;
+        }
+        return methods[i].method;
+    }
+    return NULL;
 }
 
 __declspec(noinline)
@@ -517,6 +572,7 @@ static LPSTR hook_GetCommandLineA()
 {
     PELoader* loader = getPELoaderPointer();
 
+    // loader->Config.FindAPI();
 }
 
 __declspec(noinline)
