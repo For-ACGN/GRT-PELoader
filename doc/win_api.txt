@@ -9,3 +9,6 @@ https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createm
 https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-releasemutex
 https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitforsingleobject
 https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle
+https://learn.microsoft.com/en-us/windows/win32/api/processenv/nf-processenv-getcommandlinea
+https://learn.microsoft.com/en-us/windows/win32/api/processenv/nf-processenv-getcommandlinew
+https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-exitprocess
