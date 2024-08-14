@@ -20,6 +20,8 @@ hash_api -fmt 64 -conc -func CloseHandle
 hash_api -fmt 64 -conc -func GetCommandLineA
 hash_api -fmt 64 -conc -func GetCommandLineW
 hash_api -fmt 64 -conc -func ExitProcess
+hash_api -fmt 64 -conc -func RT_GetArgument
+hash_api -fmt 64 -conc -func RT_EraseArgument
 echo.
 
 echo ------------------------x86------------------------
@@ -37,6 +39,8 @@ hash_api -fmt 32 -conc -func CloseHandle
 hash_api -fmt 32 -conc -func GetCommandLineA
 hash_api -fmt 32 -conc -func GetCommandLineW
 hash_api -fmt 32 -conc -func ExitProcess
+hash_api -fmt 32 -conc -func RT_GetArgument
+hash_api -fmt 32 -conc -func RT_EraseArgument
 echo.
 
 pause
