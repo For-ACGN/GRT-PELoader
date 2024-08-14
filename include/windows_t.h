@@ -139,4 +139,13 @@ typedef BOOL (*CloseHandle_t)
     HANDLE hObject
 );
 
+typedef LPSTR (*GetCommandLineA_t)();
+
+typedef LPWSTR (*GetCommandLineW_t)();
+
+typedef void (*ExitProcess_t)
+(
+    UINT uExitCode
+);
+
 #endif // WINDOWS_T_H
