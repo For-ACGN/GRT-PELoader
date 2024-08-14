@@ -4,6 +4,7 @@
 #include "lib_memory.h"
 #include "random.h"
 #include "win_api.h"
+#include "runtime.h"
 #include "pe_loader.h"
 #include "epilogue.h"
 #include "debug.h"
@@ -29,6 +30,9 @@ typedef struct {
     GetCommandLineA_t       GetCommandLineA;
     GetCommandLineW_t       GetCommandLineW;
     ExitProcess_t           ExitProcess;
+
+    // Runtime API
+    GetArgument_t GetArgument;
 
     // loader context
     void*  MainMemPage; // store all structures
@@ -65,6 +69,7 @@ static PELoader* getPELoaderPointer();
 
 static void* allocLoaderMemPage(PELoader_Cfg* cfg);
 static bool  initLoaderAPI(PELoader* loader);
+static void  initRuntimeAPI(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
@@ -244,7 +249,33 @@ static bool initLoaderAPI(PELoader* loader)
     loader->GetCommandLineA       = list[0x0B].proc;
     loader->GetCommandLineW       = list[0x0C].proc;
     loader->ExitProcess           = list[0x0D].proc;
+
+    // try to get Runtime API
+    initRuntimeAPI(loader);
     return true;
+}
+
+static void initRuntimeAPI(PELoader* loader)
+{
+    typedef struct { 
+        uint hash; uint key; void* proc;
+    } rt_api;
+    rt_api list[] =
+#ifdef _WIN64
+    {
+        { 0xF16530F51C88C47C, 0xF76BBDC69E9E3074 }, // RT_GetArgument
+    };
+#elif _WIN32
+    {
+        { 0x45A848E5, 0xE9036EFD }, // RT_GetArgument
+    };
+#endif
+    for (int i = 0; i < arrlen(list); i++)
+    {
+        list[i].proc = loader->Config.FindAPI(list[i].hash, list[i].key);
+    }
+
+    loader->GetArgument = list[0].proc;
 }
 
 static errno loadPEImage(PELoader* loader)
@@ -586,6 +617,12 @@ static LPSTR hook_GetCommandLineA()
 {
     PELoader* loader = getPELoaderPointer();
 
+    // try to get it from runtime
+    LPSTR cmd = NULL;
+    if (loader->GetArgument != NULL && loader->GetArgument(1, &cmd, NULL))
+    {
+        return cmd;
+    }
     return loader->GetCommandLineA();
 }
 
@@ -594,6 +631,12 @@ static LPWSTR hook_GetCommandLineW()
 {
     PELoader* loader = getPELoaderPointer();
 
+    // try to get it from runtime
+    LPSTR cmd = NULL;
+    if (loader->GetArgument != NULL && loader->GetArgument(1, &cmd, NULL))
+    {
+        return cmd;
+    }
     return loader->GetCommandLineW();
 }
 
