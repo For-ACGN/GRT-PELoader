@@ -51,6 +51,8 @@ typedef const uint16* LPCWSTR;
 #define WAIT_TIMEOUT  0x00000102
 #define WAIT_FAILED   0xFFFFFFFF
 
+#define MAX_PATH 260
+
 #define PE_FILE_HEADER_SIZE      24
 #define PE_OPT_HEADER_SIZE_64    240
 #define PE_OPT_HEADER_SIZE_32    224
