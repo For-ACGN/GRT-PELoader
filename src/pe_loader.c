@@ -68,8 +68,8 @@ errno LDR_Destroy();
 static PELoader* getPELoaderPointer();
 
 static void* allocLoaderMemPage(PELoader_Cfg* cfg);
-static bool  initLoaderAPI(PELoader* loader);
-static void  initRuntimeAPI(PELoader* loader);
+static bool  initWindowsAPI(PELoader* loader);
+static bool  initRuntimeAPI(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
@@ -117,9 +117,14 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     errno errno = NO_ERROR;
     for (;;)
     {
-        if (!initLoaderAPI(loader))
+        if (!initWindowsAPI(loader))
         {
-            errno = ERR_LOADER_INIT_API;
+            errno = ERR_LOADER_INIT_WINDOWS_API;
+            break;
+        }
+        if (!initRuntimeAPI(loader))
+        {
+            errno = ERR_LOADER_INIT_RUNTIME_API;
             break;
         }
         errno = loadPEImage(loader);
@@ -184,7 +189,7 @@ static void* allocLoaderMemPage(PELoader_Cfg* cfg)
     return addr;
 }
 
-static bool initLoaderAPI(PELoader* loader)
+static bool initWindowsAPI(PELoader* loader)
 {
     typedef struct { 
         uint hash; uint key; void* proc;
@@ -249,13 +254,10 @@ static bool initLoaderAPI(PELoader* loader)
     loader->GetCommandLineA       = list[0x0B].proc;
     loader->GetCommandLineW       = list[0x0C].proc;
     loader->ExitProcess           = list[0x0D].proc;
-
-    // try to get Runtime API
-    initRuntimeAPI(loader);
     return true;
 }
 
-static void initRuntimeAPI(PELoader* loader)
+static bool initRuntimeAPI(PELoader* loader)
 {
     typedef struct { 
         uint hash; uint key; void* proc;
@@ -272,10 +274,16 @@ static void initRuntimeAPI(PELoader* loader)
 #endif
     for (int i = 0; i < arrlen(list); i++)
     {
-        list[i].proc = loader->Config.FindAPI(list[i].hash, list[i].key);
+        void* proc = loader->Config.FindAPI(list[i].hash, list[i].key);
+        if (proc == NULL)
+        {
+            return false;
+        }
+        list[i].proc = proc;
     }
 
     loader->GetArgument = list[0].proc;
+    return true;
 }
 
 static errno loadPEImage(PELoader* loader)
@@ -618,10 +626,14 @@ static LPSTR hook_GetCommandLineA()
     PELoader* loader = getPELoaderPointer();
 
     // try to get it from runtime
-    LPSTR cmd = NULL;
-    if (loader->GetArgument != NULL && loader->GetArgument(1, &cmd, NULL))
+    LPSTR  cmd = NULL;
+    uint32 size;
+    if (loader->GetArgument(1, &cmd, &size))
     {
-        return cmd;
+        if (size > 0)
+        {
+            return cmd;
+        }
     }
     return loader->GetCommandLineA();
 }
@@ -632,10 +644,14 @@ static LPWSTR hook_GetCommandLineW()
     PELoader* loader = getPELoaderPointer();
 
     // try to get it from runtime
-    LPSTR cmd = NULL;
-    if (loader->GetArgument != NULL && loader->GetArgument(1, &cmd, NULL))
+    LPWSTR cmd = NULL;
+    uint32 size;
+    if (loader->GetArgument(1, &cmd, &size))
     {
-        return cmd;
+        if (size > 0)
+        {
+            return cmd;
+        }
     }
     return loader->GetCommandLineW();
 }
