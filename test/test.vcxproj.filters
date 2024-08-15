@@ -97,6 +97,9 @@
     <ClInclude Include="..\include\win_api.h">
       <Filter>Header</Filter>
     </ClInclude>
+    <ClInclude Include="..\include\runtime.h">
+      <Filter>Header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <MASM Include="..\asm\epilogue.asm">
