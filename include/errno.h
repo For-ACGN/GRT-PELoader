@@ -28,5 +28,8 @@ errno GetLastErrno();
 #define ERR_LOADER_MAP_SECTIONS     (0x01000102)
 #define ERR_LOADER_FIX_RELOC_TABLE  (0x01000103)
 #define ERR_LOADER_PROCESS_IAT      (0x01000104)
+#define ERR_LOADER_LOCK             (0x01000201)
+#define ERR_LOADER_UNLOCK           (0x01000202)
+#define ERR_LOADER_CREATE_THREAD    (0x01000203)
 
 #endif // ERRNO_H
