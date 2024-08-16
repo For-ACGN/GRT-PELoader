@@ -731,38 +731,57 @@ uint LDR_Execute()
 {
     PELoader* loader = getPELoaderPointer();
 
-
-
-    if (loader->IsDLL)
-    {
-        DllMain_t dllMain  = (DllMain_t)(loader->EntryPoint);
-        HMODULE hModule  = (HMODULE)(loader->PEImage);
-        DWORD   dwReason = DLL_PROCESS_ATTACH;
-        uint exitCode;
-        if (dllMain(hModule, dwReason, NULL))
-        {
-            exitCode = 0;
-        } else {
-            exitCode = 1;
-        }
-        set_exit_code(exitCode);
-        return exitCode;
-    }
-    void* start = GetFuncAddr(&pe_entry_point);
-    HANDLE hThread = loader->CreateThread(NULL, 0, start, NULL, 0, NULL);
-    if (hThread == NULL)
+    if (!ldr_lock(loader))
     {
         return 1;
     }
-    loader->hThread = hThread;
 
-
-
-    if (!loader->Config.Wait)
+    bool success = true;
+    for (;;)
     {
-        return 0;
+        if (loader->IsDLL)
+        {
+            DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
+            HMODULE hModule  = (HMODULE)(loader->PEImage);
+            DWORD   dwReason = DLL_PROCESS_ATTACH;
+            // call entry point
+            uint exitCode;
+            if (dllMain(hModule, dwReason, NULL))
+            {
+                exitCode = 0;
+            } else {
+                exitCode = 1;
+            }
+            set_exit_code(exitCode);
+            break;
+        }
+        // create thread at entry point
+        void* start = GetFuncAddr(&pe_entry_point);
+        HANDLE hThread = loader->CreateThread(NULL, 0, start, NULL, 0, NULL);
+        if (hThread == NULL)
+        {
+            success = false;
+            break;
+        }
+        loader->hThread = hThread;
+        // wait main thread exit
+        if (!loader->Config.Wait)
+        {
+            break;
+        }
+        loader->WaitForSingleObject(hThread, INFINITE);
+        break;
     }
-    loader->WaitForSingleObject(hThread, INFINITE);
+
+    if (!ldr_unlock(loader))
+    {
+        return 1;
+    }
+
+    if (!success)
+    {
+        return 1;
+    }
     return get_exit_code();
 }
 
