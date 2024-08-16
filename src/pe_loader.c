@@ -59,6 +59,7 @@ typedef struct {
 
 // PE loader methods
 uint  LDR_Execute();
+errno LDR_Exit();
 errno LDR_Destroy();
 
 // hard encoded address in getPELoaderPointer for replacement
@@ -161,6 +162,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     module->EntryPoint = (void*)(loader->EntryPoint);
     // loader module methods
     module->Execute = GetFuncAddr(&LDR_Execute);
+    module->Exit    = GetFuncAddr(&LDR_Exit);
     module->Destroy = GetFuncAddr(&LDR_Destroy);
     // record return value pointer;
     loader->ExitCode = &module->ExitCode;
@@ -716,12 +718,14 @@ uint LDR_Execute()
 {
     PELoader* loader = getPELoaderPointer();
 
+
+
     if (loader->IsDLL)
     {
         DllMain_t dllMain  = (DllMain_t)(loader->EntryPoint);
-        HMODULE   hModule  = (HMODULE)(loader->PEImage);
-        DWORD     dwReason = DLL_PROCESS_ATTACH;
-        bool ret = dllMain(hModule, dwReason, NULL);
+        HMODULE hModule  = (HMODULE)(loader->PEImage);
+        DWORD   dwReason = DLL_PROCESS_ATTACH;
+        BOOL ret = dllMain(hModule, dwReason, NULL);
         uint exitCode = (uint)ret;
         set_exit_code(exitCode);
         return exitCode;
@@ -733,12 +737,23 @@ uint LDR_Execute()
         return 1;
     }
     loader->hThread = hThread;
+
+
+
     if (!loader->Config.Wait)
     {
         return 0;
     }
     loader->WaitForSingleObject(hThread, INFINITE);
     return get_exit_code();
+}
+
+__declspec(noinline)
+errno LDR_Exit()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    return NO_ERROR;
 }
 
 __declspec(noinline)
@@ -749,9 +764,9 @@ errno LDR_Destroy()
     if (loader->IsDLL)
     {
         DllMain_t dllMain  = (DllMain_t)(loader->EntryPoint);
-        HMODULE   hModule  = (HMODULE)(loader->PEImage);
-        DWORD     dwReason = DLL_PROCESS_DETACH;
-        bool ret = dllMain(hModule, dwReason, NULL);
+        HMODULE hModule  = (HMODULE)(loader->PEImage);
+        DWORD   dwReason = DLL_PROCESS_DETACH;
+        BOOL ret = dllMain(hModule, dwReason, NULL);
         uint exitCode = (uint)ret;
         set_exit_code(exitCode);
     }
