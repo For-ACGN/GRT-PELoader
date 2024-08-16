@@ -2,8 +2,10 @@
 #include "windows_t.h"
 #include "rel_addr.h"
 #include "lib_memory.h"
-#include "random.h"
+#include "hash_api.h"
 #include "win_api.h"
+#include "random.h"
+#include "errno.h"
 #include "runtime.h"
 #include "pe_loader.h"
 #include "epilogue.h"
@@ -44,12 +46,12 @@ typedef struct {
     uint32  PEOffset;
     uint16  NumSections;
     uint16  OptHeaderSize;
-    uint16  Characteristics;
     uintptr DataDir;
     uintptr EntryPoint;
     uintptr ImageBase;
     uint32  ImageSize;
     uintptr ImportTable;
+    bool    IsDLL;
 
     // write return value
     uint* ExitCode;
@@ -315,6 +317,8 @@ static bool parsePEImage(PELoader* loader)
     uint16 numSections     = *(uint16*)(imageAddr + peOffset + 6);
     uint16 optHeaderSize   = *(uint16*)(imageAddr + peOffset + 20);
     uint16 characteristics = *(uint16*)(imageAddr + peOffset + 22);
+    // check PE file typee
+    bool isDLL = (characteristics & IMAGE_FILE_DLL) == IMAGE_FILE_DLL;
     // parse OptionalHeader
 #ifdef _WIN64
     uint16 ddOffset = PE_OPT_HEADER_SIZE_64 - 16 * PE_DATA_DIRECTORY_SIZE;
@@ -330,14 +334,14 @@ static bool parsePEImage(PELoader* loader)
 #endif
     uint32  imageSize = *(uint32*)(imageAddr + peOffset + 80);
     // store result
-    loader->PEOffset        = peOffset;
-    loader->NumSections     = numSections;
-    loader->OptHeaderSize   = optHeaderSize;
-    loader->Characteristics = characteristics;
-    loader->DataDir         = dataDir;
-    loader->EntryPoint      = entryPoint;
-    loader->ImageBase       = imageBase;
-    loader->ImageSize       = imageSize;
+    loader->PEOffset      = peOffset;
+    loader->NumSections   = numSections;
+    loader->OptHeaderSize = optHeaderSize;
+    loader->DataDir       = dataDir;
+    loader->EntryPoint    = entryPoint;
+    loader->ImageBase     = imageBase;
+    loader->ImageSize     = imageSize;
+    loader->IsDLL         = isDLL;
     return true;
 }
 
@@ -712,10 +716,13 @@ uint LDR_Execute()
 {
     PELoader* loader = getPELoaderPointer();
 
-    // TODO DllMain
-    if ((loader->Characteristics & IMAGE_FILE_DLL) == IMAGE_FILE_DLL)
+    if (loader->IsDLL)
     {
-        uint exitCode = ((uint(*)())(loader->EntryPoint))();
+        DllMain_t dllMain  = (DllMain_t)(loader->EntryPoint);
+        HMODULE   hModule  = (HMODULE)(loader->PEImage);
+        DWORD     dwReason = DLL_PROCESS_ATTACH;
+        bool ret = dllMain(hModule, dwReason, NULL);
+        uint exitCode = (uint)ret;
         set_exit_code(exitCode);
         return exitCode;
     }
@@ -738,6 +745,18 @@ __declspec(noinline)
 errno LDR_Destroy()
 {
     PELoader* loader = getPELoaderPointer();
+
+    if (loader->IsDLL)
+    {
+        DllMain_t dllMain  = (DllMain_t)(loader->EntryPoint);
+        HMODULE   hModule  = (HMODULE)(loader->PEImage);
+        DWORD     dwReason = DLL_PROCESS_DETACH;
+        bool ret = dllMain(hModule, dwReason, NULL);
+        uint exitCode = (uint)ret;
+        set_exit_code(exitCode);
+    }
+
+    // create a thread for call ExitProcess
 
     return NO_ERROR;
 }
