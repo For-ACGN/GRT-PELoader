@@ -31,5 +31,8 @@ errno GetLastErrno();
 #define ERR_LOADER_LOCK             (0x01000201)
 #define ERR_LOADER_UNLOCK           (0x01000202)
 #define ERR_LOADER_CREATE_THREAD    (0x01000203)
+#define ERR_LOADER_CLOSE_MUTEX      (0x01000204)
+#define ERR_LOADER_FREE_PE_IMAGE    (0x01000205)
+#define ERR_LOADER_FREE_MAIN_PAGE   (0x01000206)
 
 #endif // ERRNO_H
