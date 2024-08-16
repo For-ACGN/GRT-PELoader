@@ -39,7 +39,6 @@ typedef struct {
     // loader context
     void*  MainMemPage; // store all structures
     HANDLE hMutex;      // global mutex
-    HANDLE hThread;     // main thread
 
     // store PE image information
     uintptr PEImage;
@@ -733,7 +732,7 @@ uint LDR_Execute()
 
     if (!ldr_lock(loader))
     {
-        return 1;
+        return 0x1001;
     }
 
     bool success = true;
@@ -756,31 +755,30 @@ uint LDR_Execute()
             break;
         }
         // create thread at entry point
-        void* start = GetFuncAddr(&pe_entry_point);
-        HANDLE hThread = loader->CreateThread(NULL, 0, start, NULL, 0, NULL);
+        void* addr = GetFuncAddr(&pe_entry_point);
+        HANDLE hThread = loader->CreateThread(NULL, 0, addr, NULL, 0, NULL);
         if (hThread == NULL)
         {
             success = false;
             break;
         }
-        loader->hThread = hThread;
         // wait main thread exit
-        if (!loader->Config.Wait)
+        if (loader->Config.Wait)
         {
-            break;
+            loader->WaitForSingleObject(hThread, INFINITE);
         }
-        loader->WaitForSingleObject(hThread, INFINITE);
+        loader->CloseHandle(hThread);
         break;
     }
 
     if (!ldr_unlock(loader))
     {
-        return 1;
+        return 0x1002;
     }
 
     if (!success)
     {
-        return 1;
+        return 0x1003;
     }
     return get_exit_code();
 }
@@ -790,17 +788,14 @@ errno LDR_Exit()
 {
     PELoader* loader = getPELoaderPointer();
 
-    return NO_ERROR;
-}
-
-__declspec(noinline)
-errno LDR_Destroy()
-{
-    PELoader* loader = getPELoaderPointer();
+    if (!ldr_lock(loader))
+    {
+        return ERR_LOADER_LOCK;
+    }
 
     if (loader->IsDLL)
     {
-        DllMain_t dllMain  = (DllMain_t)(loader->EntryPoint);
+        DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
         HMODULE hModule  = (HMODULE)(loader->PEImage);
         DWORD   dwReason = DLL_PROCESS_DETACH;
         uint exitCode;
@@ -813,7 +808,47 @@ errno LDR_Destroy()
         set_exit_code(exitCode);
     }
 
-    // create a thread for call ExitProcess
+    errno errno = NO_ERROR;
+    for (;;)
+    {
+        // create a thread for call ExitProcess
+        void*  addr = GetFuncAddr(&hook_ExitProcess);
+        HANDLE hThread = loader->CreateThread(NULL, 0, addr, NULL, 0, NULL);
+        if (hThread == NULL)
+        {
+
+            break;
+        }
+        // wait main thread exit
+        if (loader->Config.Wait)
+        {
+            loader->WaitForSingleObject(hThread, INFINITE);
+        }
+        loader->CloseHandle(hThread);
+    }
+
+    if (!ldr_unlock(loader))
+    {
+        return ERR_LOADER_UNLOCK;
+    }
+
+    return errno;
+}
+
+__declspec(noinline)
+errno LDR_Destroy()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    if (!ldr_lock(loader))
+    {
+        return ERR_LOADER_LOCK;
+    }
+
+    if (!ldr_unlock(loader))
+    {
+        return ERR_LOADER_UNLOCK;
+    }
 
     return NO_ERROR;
 }
