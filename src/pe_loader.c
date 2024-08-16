@@ -86,6 +86,7 @@ static void* getPELoaderMethods(byte* module, LPCSTR lpProcName);
 static void  set_exit_code(uint code);
 static uint  get_exit_code();
 static void  pe_entry_point();
+static errno ldr_exit_process();
 
 static LPSTR  hook_GetCommandLineA();
 static LPWSTR hook_GetCommandLineW();
@@ -738,6 +739,7 @@ uint LDR_Execute()
     bool success = true;
     for (;;)
     {
+        // make callback about DLL_PROCESS_DETACH
         if (loader->IsDLL)
         {
             DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
@@ -793,6 +795,58 @@ errno LDR_Exit()
         return ERR_LOADER_LOCK;
     }
 
+    errno errno = ldr_exit_process();
+
+    if (!ldr_unlock(loader))
+    {
+        return ERR_LOADER_UNLOCK;
+    }
+    return errno;
+}
+
+__declspec(noinline)
+errno LDR_Destroy()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    if (!ldr_lock(loader))
+    {
+        return ERR_LOADER_LOCK;
+    }
+
+    errno errno = ldr_exit_process();
+
+    // close global mutex
+    if (!loader->CloseHandle(loader->hMutex) && errno == NO_ERROR)
+    {
+        errno = ERR_LOADER_CLOSE_MUTEX;
+    }
+
+    // release memory page for PE image
+    void* peImage = (void*)(loader->PEImage);
+    RandBuf(peImage, loader->ImageSize);
+    if (!loader->VirtualFree(peImage, 0, MEM_RELEASE) && errno == NO_ERROR)
+    {
+        errno = ERR_LOADER_FREE_PE_IMAGE;
+    }
+
+    // must copy variables in PELoader before call RandBuf
+    VirtualFree_t virtualFree = loader->VirtualFree;
+    void* memPage = loader->MainMemPage;
+    // release main memory page
+    RandBuf(memPage, MAIN_MEM_PAGE_SIZE);
+    if (!loader->VirtualFree(memPage, 0, MEM_RELEASE) && errno == NO_ERROR)
+    {
+        errno = ERR_LOADER_FREE_MAIN_PAGE;
+    }
+    return errno;
+}
+
+static errno ldr_exit_process()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    // make callback about DLL_PROCESS_DETACH
     if (loader->IsDLL)
     {
         DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
@@ -808,6 +862,7 @@ errno LDR_Exit()
         set_exit_code(exitCode);
     }
 
+    // call ExitProcess for terminate all threads
     errno errno = NO_ERROR;
     for (;;)
     {
@@ -816,39 +871,13 @@ errno LDR_Exit()
         HANDLE hThread = loader->CreateThread(NULL, 0, addr, NULL, 0, NULL);
         if (hThread == NULL)
         {
-
+            errno = ERR_LOADER_CREATE_THREAD;
             break;
         }
-        // wait main thread exit
-        if (loader->Config.Wait)
-        {
-            loader->WaitForSingleObject(hThread, INFINITE);
-        }
+        // wait thread exit
+        loader->WaitForSingleObject(hThread, INFINITE);
         loader->CloseHandle(hThread);
+        break;
     }
-
-    if (!ldr_unlock(loader))
-    {
-        return ERR_LOADER_UNLOCK;
-    }
-
     return errno;
-}
-
-__declspec(noinline)
-errno LDR_Destroy()
-{
-    PELoader* loader = getPELoaderPointer();
-
-    if (!ldr_lock(loader))
-    {
-        return ERR_LOADER_LOCK;
-    }
-
-    if (!ldr_unlock(loader))
-    {
-        return ERR_LOADER_UNLOCK;
-    }
-
-    return NO_ERROR;
 }
