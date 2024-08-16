@@ -6,6 +6,7 @@
 #include "errno.h"
 
 typedef uint  (*Execute_t)();
+typedef errno (*Exit_t)();
 typedef errno (*Destroy_t)();
 
 typedef struct {
@@ -26,10 +27,13 @@ typedef struct {
     // main thread return value or argument about call ExitProcess
     uint ExitCode;
 
-    // create a thread at EntryPoint
+    // create a thread at EntryPoint, it can call multi times
     Execute_t Execute;
 
-    // release all resource about loader
+    // release all resource, it can call multi times
+    Exit_t Exit;
+
+    // destroy all resource about PE loader, it can only call one time
     Destroy_t Destroy;
 } PELoader_M;
 
