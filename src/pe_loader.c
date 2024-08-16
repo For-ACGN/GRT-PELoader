@@ -568,6 +568,19 @@ static PELoader* getPELoaderPointer()
 #pragma optimize("", on)
 
 __declspec(noinline)
+static bool ldr_lock(PELoader* loader)
+{
+    uint32 event = loader->WaitForSingleObject(loader->hMutex, INFINITE);
+    return event == WAIT_OBJECT_0;
+}
+
+__declspec(noinline)
+static bool ldr_unlock(PELoader* loader)
+{
+    return loader->ReleaseMutex(loader->hMutex);
+}
+
+__declspec(noinline)
 void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 {
     PELoader* loader = getPELoaderPointer();
@@ -685,30 +698,30 @@ static void set_exit_code(uint code)
 {
     PELoader* loader = getPELoaderPointer();
 
-    if (loader->WaitForSingleObject(loader->hMutex, INFINITE) != WAIT_OBJECT_0)
+    if (!ldr_lock(loader))
     {
         return;
     }
 
     *loader->ExitCode = code;
 
-    loader->ReleaseMutex(loader->hMutex);
+    ldr_unlock(loader);
 }
 
 static uint get_exit_code()
 {
     PELoader* loader = getPELoaderPointer();
 
-    if (loader->WaitForSingleObject(loader->hMutex, INFINITE) != WAIT_OBJECT_0)
+    if (!ldr_lock(loader))
     {
-        return 2;
+        return 1;
     }
 
     uint code = *loader->ExitCode;
 
-    if (!loader->ReleaseMutex(loader->hMutex))
+    if (!ldr_unlock(loader))
     {
-        return 2;
+        return 1;
     }
     return code;
 }
@@ -725,8 +738,13 @@ uint LDR_Execute()
         DllMain_t dllMain  = (DllMain_t)(loader->EntryPoint);
         HMODULE hModule  = (HMODULE)(loader->PEImage);
         DWORD   dwReason = DLL_PROCESS_ATTACH;
-        BOOL ret = dllMain(hModule, dwReason, NULL);
-        uint exitCode = (uint)ret;
+        uint exitCode;
+        if (dllMain(hModule, dwReason, NULL))
+        {
+            exitCode = 0;
+        } else {
+            exitCode = 1;
+        }
         set_exit_code(exitCode);
         return exitCode;
     }
@@ -766,8 +784,13 @@ errno LDR_Destroy()
         DllMain_t dllMain  = (DllMain_t)(loader->EntryPoint);
         HMODULE hModule  = (HMODULE)(loader->PEImage);
         DWORD   dwReason = DLL_PROCESS_DETACH;
-        BOOL ret = dllMain(hModule, dwReason, NULL);
-        uint exitCode = (uint)ret;
+        uint exitCode;
+        if (dllMain(hModule, dwReason, NULL))
+        {
+            exitCode = 0;
+        } else {
+            exitCode = 1;
+        }
         set_exit_code(exitCode);
     }
 
