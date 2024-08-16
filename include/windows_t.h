@@ -70,6 +70,11 @@ typedef const uint16* LPCWSTR;
 #define IMAGE_REL_BASED_HIGHLOW  3 
 #define IMAGE_REL_BASED_DIR64    10
 
+#define DLL_PROCESS_ATTACH 1
+#define DLL_PROCESS_DETACH 0
+#define DLL_THREAD_ATTACH  2
+#define DLL_THREAD_DETACH  3
+
 typedef struct {
     DWORD VirtualAddress;
     DWORD SizeOfBlock;
@@ -82,6 +87,11 @@ typedef struct {
     DWORD Name;
     DWORD FirstThunk;
 } PE_ImportDirectory;
+
+typedef BOOL (*DllMain_t)
+(
+    HMODULE hModule, DWORD dwReason, LPVOID lpReserved
+);
 
 typedef HMODULE (*LoadLibraryA_t)
 (
