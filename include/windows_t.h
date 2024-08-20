@@ -31,7 +31,14 @@ typedef const void*   LPCVOID;
 typedef const uint8*  LPCSTR;
 typedef const uint16* LPCWSTR;
 
+#define MAX_PATH 260
+
 #define CURRENT_PROCESS (HANDLE)(-1)
+
+#define DLL_PROCESS_ATTACH 1
+#define DLL_PROCESS_DETACH 0
+#define DLL_THREAD_ATTACH  2
+#define DLL_THREAD_DETACH  3
 
 #define MEM_COMMIT  0x00001000
 #define MEM_RESERVE 0x00002000
@@ -51,7 +58,9 @@ typedef const uint16* LPCWSTR;
 #define WAIT_TIMEOUT  0x00000102
 #define WAIT_FAILED   0xFFFFFFFF
 
-#define MAX_PATH 260
+#define STD_INPUT_HANDLE  ((DWORD)(-10))
+#define STD_OUTPUT_HANDLE ((DWORD)(-11))
+#define STD_ERROR_HANDLE  ((DWORD)(-12))
 
 #define PE_FILE_HEADER_SIZE      24
 #define PE_OPT_HEADER_SIZE_64    240
@@ -69,11 +78,6 @@ typedef const uint16* LPCWSTR;
 #define IMAGE_REL_BASED_ABSOLUTE 0
 #define IMAGE_REL_BASED_HIGHLOW  3 
 #define IMAGE_REL_BASED_DIR64    10
-
-#define DLL_PROCESS_ATTACH 1
-#define DLL_PROCESS_DETACH 0
-#define DLL_THREAD_ATTACH  2
-#define DLL_THREAD_DETACH  3
 
 typedef struct {
     DWORD VirtualAddress;
