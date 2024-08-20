@@ -13,11 +13,24 @@ typedef struct {
     // PE image memory address
     void* Image;
 
-    // wait main thread exit if it is a exe
-    bool Wait;
+    // for hook GetCommandLineA and GetCommandLineW,
+    // if it is NULL, call original GetCommandLine
+    byte* CommandLine;
+
+    // set standard handles for hook GetStdHandle,
+    // if them are NULL, call original GetStdHandle
+    HANDLE StdInput;
+    HANDLE StdOutput;
+    HANDLE StdError;
+
+    // wait main thread exit if it is a exe image
+    bool WaitMain;
 
     // use custom FindAPI from Gleam-RT for hook
     FindAPI_t FindAPI;
+
+    // adjust current memory page protect for test
+    bool AdjustProtect;
 } PELoader_Cfg;
 
 typedef struct {
