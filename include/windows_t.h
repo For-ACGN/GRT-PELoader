@@ -33,7 +33,7 @@ typedef const uint16* LPCWSTR;
 
 #define MAX_PATH 260
 
-#define CURRENT_PROCESS (HANDLE)(-1)
+#define CURRENT_PROCESS ((HANDLE)(-1))
 
 #define DLL_PROCESS_ATTACH 1
 #define DLL_PROCESS_DETACH 0
@@ -156,6 +156,11 @@ typedef BOOL (*CloseHandle_t)
 typedef LPSTR (*GetCommandLineA_t)();
 
 typedef LPWSTR (*GetCommandLineW_t)();
+
+typedef HANDLE (*GetStdHandle_t)
+(
+    DWORD nStdHandle
+);
 
 typedef void (*ExitProcess_t)
 (
