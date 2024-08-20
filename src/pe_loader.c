@@ -33,9 +33,6 @@ typedef struct {
     GetCommandLineW_t       GetCommandLineW;
     ExitProcess_t           ExitProcess;
 
-    // Runtime API
-    GetArgument_t GetArgument;
-
     // loader context
     void*  MainMemPage; // store all structures
     HANDLE hMutex;      // global mutex
@@ -70,8 +67,7 @@ errno LDR_Destroy();
 static PELoader* getPELoaderPointer();
 
 static void* allocLoaderMemPage(PELoader_Cfg* cfg);
-static bool  initWindowsAPI(PELoader* loader);
-static bool  initRuntimeAPI(PELoader* loader);
+static bool  initLoaderAPI(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
@@ -120,14 +116,9 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     errno errno = NO_ERROR;
     for (;;)
     {
-        if (!initWindowsAPI(loader))
+        if (!initLoaderAPI(loader))
         {
-            errno = ERR_LOADER_INIT_WINDOWS_API;
-            break;
-        }
-        if (!initRuntimeAPI(loader))
-        {
-            errno = ERR_LOADER_INIT_RUNTIME_API;
+            errno = ERR_LOADER_INIT_API;
             break;
         }
         errno = loadPEImage(loader);
@@ -193,7 +184,7 @@ static void* allocLoaderMemPage(PELoader_Cfg* cfg)
     return addr;
 }
 
-static bool initWindowsAPI(PELoader* loader)
+static bool initLoaderAPI(PELoader* loader)
 {
     typedef struct { 
         uint hash; uint key; void* proc;
@@ -258,35 +249,6 @@ static bool initWindowsAPI(PELoader* loader)
     loader->GetCommandLineA       = list[0x0B].proc;
     loader->GetCommandLineW       = list[0x0C].proc;
     loader->ExitProcess           = list[0x0D].proc;
-    return true;
-}
-
-static bool initRuntimeAPI(PELoader* loader)
-{
-    typedef struct { 
-        uint hash; uint key; void* proc;
-    } rt_api;
-    rt_api list[] =
-#ifdef _WIN64
-    {
-        { 0xF16530F51C88C47C, 0xF76BBDC69E9E3074 }, // RT_GetArgument
-    };
-#elif _WIN32
-    {
-        { 0x45A848E5, 0xE9036EFD }, // RT_GetArgument
-    };
-#endif
-    for (int i = 0; i < arrlen(list); i++)
-    {
-        void* proc = loader->Config.FindAPI(list[i].hash, list[i].key);
-        if (proc == NULL)
-        {
-            return false;
-        }
-        list[i].proc = proc;
-    }
-
-    loader->GetArgument = list[0].proc;
     return true;
 }
 
@@ -765,7 +727,7 @@ uint LDR_Execute()
             break;
         }
         // wait main thread exit
-        if (loader->Config.Wait)
+        if (loader->Config.WaitMain)
         {
             loader->WaitForSingleObject(hThread, INFINITE);
         }
