@@ -31,6 +31,7 @@ typedef struct {
     CloseHandle_t           CloseHandle;
     GetCommandLineA_t       GetCommandLineA;
     GetCommandLineW_t       GetCommandLineW;
+    GetStdHandle_t          GetStdHandle;
     ExitProcess_t           ExitProcess;
 
     // loader context
@@ -86,6 +87,7 @@ static errno ldr_exit_process();
 
 static LPSTR  hook_GetCommandLineA();
 static LPWSTR hook_GetCommandLineW();
+static HANDLE hook_GetStdHandle(DWORD nStdHandle);
 static void   hook_ExitProcess(UINT uExitCode);
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
@@ -205,6 +207,7 @@ static bool initLoaderAPI(PELoader* loader)
         { 0xB23064DF64282DE1, 0xD62F5C65075FCCE8 }, // CloseHandle
         { 0xEF31896F2FACEC04, 0x0E670990125E8E48 }, // GetCommandLineA
         { 0x701EF754FFADBDC2, 0x6D5BE783B0AF5812 }, // GetCommandLineW
+        { 0x599C793AB3F4599E, 0xBBBA4AE31D6A6D8F }, // GetStdHandle
         { 0x131A9BBD85CB5E0D, 0x5126E3CBD1E0DB9A }, // ExitProcess
     };
 #elif _WIN32
@@ -222,6 +225,7 @@ static bool initLoaderAPI(PELoader* loader)
         { 0x7DC545BC, 0xCBD67153 }, // CloseHandle
         { 0xA187476E, 0x5AF922F3 }, // GetCommandLineA
         { 0xC15EF07A, 0x47A945CE }, // GetCommandLineW
+        { 0xAE68A468, 0xD611C7F0 }, // GetStdHandle
         { 0x0C5D0A6C, 0xDB58404D }, // ExitProcess
     };
 #endif
@@ -248,7 +252,8 @@ static bool initLoaderAPI(PELoader* loader)
     loader->CloseHandle           = list[0x0A].proc;
     loader->GetCommandLineA       = list[0x0B].proc;
     loader->GetCommandLineW       = list[0x0C].proc;
-    loader->ExitProcess           = list[0x0D].proc;
+    loader->GetStdHandle          = list[0x0D].proc;
+    loader->ExitProcess           = list[0x0E].proc;
     return true;
 }
 
@@ -627,6 +632,39 @@ static LPWSTR hook_GetCommandLineW()
         return cmdLine;
     }
     return loader->GetCommandLineW();
+}
+
+static HANDLE hook_GetStdHandle(DWORD nStdHandle)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    // try to get it from config
+    HANDLE hStdInput  = loader->Config.StdInput;
+    HANDLE hStdOutput = loader->Config.StdOutput;
+    HANDLE hStdError  = loader->Config.StdError;
+
+    switch (nStdHandle)
+    {
+    case STD_INPUT_HANDLE:
+        if (hStdInput != NULL)
+        {
+            return hStdInput;
+        }
+        break;
+    case STD_OUTPUT_HANDLE:
+        if (hStdOutput != NULL)
+        {
+            return hStdOutput;
+        }
+        break;
+    case STD_ERROR_HANDLE:
+        if (hStdError != NULL)
+        {
+            return hStdError;
+        }
+        break;
+    }
+    return loader->GetStdHandle(nStdHandle);
 }
 
 __declspec(noinline)
