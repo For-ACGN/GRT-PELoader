@@ -2,6 +2,7 @@
 #define PE_LOADER_H
 
 #include "c_types.h"
+#include "windows_t.h"
 #include "hash_api.h"
 #include "errno.h"
 
@@ -10,12 +11,15 @@ typedef errno (*Exit_t)();
 typedef errno (*Destroy_t)();
 
 typedef struct {
+    // use custom FindAPI from Gleam-RT for hook
+    FindAPI_t FindAPI;
+
     // PE image memory address
     void* Image;
 
     // for hook GetCommandLineA and GetCommandLineW,
     // if it is NULL, call original GetCommandLine
-    byte* CommandLine;
+    void* CommandLine;
 
     // set standard handles for hook GetStdHandle,
     // if them are NULL, call original GetStdHandle
@@ -25,9 +29,6 @@ typedef struct {
 
     // wait main thread exit if it is a exe image
     bool WaitMain;
-
-    // use custom FindAPI from Gleam-RT for hook
-    FindAPI_t FindAPI;
 
     // adjust current memory page protect for test
     bool AdjustProtect;
