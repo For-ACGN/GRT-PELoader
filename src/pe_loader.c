@@ -606,15 +606,11 @@ static LPSTR hook_GetCommandLineA()
 {
     PELoader* loader = getPELoaderPointer();
 
-    // try to get it from runtime
-    LPSTR  cmd = NULL;
-    uint32 size;
-    if (loader->GetArgument(1, &cmd, &size))
+    // try to get it from config
+    LPSTR cmdLine = loader->Config.CommandLine;
+    if (cmdLine != NULL)
     {
-        if (size > 0)
-        {
-            return cmd;
-        }
+        return cmdLine;
     }
     return loader->GetCommandLineA();
 }
@@ -624,15 +620,11 @@ static LPWSTR hook_GetCommandLineW()
 {
     PELoader* loader = getPELoaderPointer();
 
-    // try to get it from runtime
-    LPWSTR cmd = NULL;
-    uint32 size;
-    if (loader->GetArgument(1, &cmd, &size))
+    // try to get it from config
+    LPWSTR cmdLine = loader->Config.CommandLine;
+    if (cmdLine != NULL)
     {
-        if (size > 0)
-        {
-            return cmd;
-        }
+        return cmdLine;
     }
     return loader->GetCommandLineW();
 }
