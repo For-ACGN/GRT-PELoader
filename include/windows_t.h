@@ -102,6 +102,16 @@ typedef HMODULE (*LoadLibraryA_t)
     LPCSTR lpLibFileName
 );
 
+typedef HMODULE (*LoadLibraryW_t)
+(
+    LPCWSTR lpLibFileName
+);
+
+typedef BOOL (*FreeLibrary_t)
+(
+    HMODULE hLibModule
+);
+
 typedef FARPROC (*GetProcAddress_t)
 (
     HMODULE hModule, LPCSTR lpProcName
