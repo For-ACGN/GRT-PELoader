@@ -182,7 +182,7 @@ static void* allocLoaderMemPage(PELoader_Cfg* cfg)
         return NULL;
     }
     RandBuf(addr, MAIN_MEM_PAGE_SIZE);
-    dbg_log("[loader]", "Main Page: 0x%zX\n", addr);
+    dbg_log("[PE Loader]", "Main Page: 0x%zX\n", addr);
     return addr;
 }
 
@@ -275,6 +275,7 @@ static errno loadPEImage(PELoader* loader)
     {
         return ERR_LOADER_PROCESS_IAT;
     }
+    dbg_log("[PE Loader]", "image: 0x%zX\n", loader->PEImage);
     return NO_ERROR;
 }
 
@@ -611,6 +612,8 @@ static LPSTR hook_GetCommandLineA()
 {
     PELoader* loader = getPELoaderPointer();
 
+    dbg_log("[PE Loader]", "GetCommandLineA\n");
+
     // try to get it from config
     LPSTR cmdLine = loader->Config.CommandLine;
     if (cmdLine != NULL)
@@ -625,6 +628,8 @@ static LPWSTR hook_GetCommandLineW()
 {
     PELoader* loader = getPELoaderPointer();
 
+    dbg_log("[PE Loader]", "GetCommandLineW\n");
+
     // try to get it from config
     LPWSTR cmdLine = loader->Config.CommandLine;
     if (cmdLine != NULL)
@@ -637,6 +642,8 @@ static LPWSTR hook_GetCommandLineW()
 static HANDLE hook_GetStdHandle(DWORD nStdHandle)
 {
     PELoader* loader = getPELoaderPointer();
+
+    dbg_log("[PE Loader]", "GetStdHandle: %d\n", nStdHandle);
 
     // try to get it from config
     HANDLE hStdInput  = loader->Config.StdInput;
@@ -671,6 +678,8 @@ __declspec(noinline)
 static void hook_ExitProcess(UINT uExitCode)
 {
     PELoader* loader = getPELoaderPointer();
+
+    dbg_log("[PE Loader]", "ExitProcess: %zu\n", uExitCode);
 
     set_exit_code(uExitCode);
 
