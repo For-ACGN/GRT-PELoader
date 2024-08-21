@@ -6,9 +6,7 @@
 #include "win_api.h"
 #include "random.h"
 #include "errno.h"
-#include "runtime.h"
 #include "pe_loader.h"
-#include "epilogue.h"
 #include "debug.h"
 
 #define MAIN_MEM_PAGE_SIZE 4096
@@ -69,6 +67,7 @@ static PELoader* getPELoaderPointer();
 
 static void* allocLoaderMemPage(PELoader_Cfg* cfg);
 static bool  initLoaderAPI(PELoader* loader);
+static bool  adjustPageProtect(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
@@ -89,6 +88,8 @@ static LPSTR  hook_GetCommandLineA();
 static LPWSTR hook_GetCommandLineW();
 static HANDLE hook_GetStdHandle(DWORD nStdHandle);
 static void   hook_ExitProcess(UINT uExitCode);
+
+static void ldr_epilogue();
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
 {
@@ -126,6 +127,11 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
         errno = loadPEImage(loader);
         if (errno != NO_ERROR)
         {
+            break;
+        }
+        if (!adjustPageProtect(loader))
+        {
+            errno = ERR_LOADER_ADJUST_PROTECT;
             break;
         }
         if (!updatePELoaderPointer(loader))
@@ -255,6 +261,20 @@ static bool initLoaderAPI(PELoader* loader)
     loader->GetStdHandle          = list[0x0D].proc;
     loader->ExitProcess           = list[0x0E].proc;
     return true;
+}
+
+// change memory protect for dynamic update pointer that hard encode.
+static bool adjustPageProtect(PELoader* loader)
+{
+    if (!loader->Config.AdjustProtect)
+    {
+        return true;
+    }
+    uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
+    uintptr end   = (uintptr)(GetFuncAddr(&ldr_epilogue));
+    uint    size  = end - begin;
+    uint32  old;
+    return loader->VirtualProtect((void*)begin, size, PAGE_EXECUTE_READWRITE, &old);
 }
 
 static errno loadPEImage(PELoader* loader)
@@ -514,15 +534,9 @@ static errno initPELoaderEnvironment(PELoader* loader)
 static bool flushInstructionCache(PELoader* loader)
 {
     uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
-    uintptr end   = (uintptr)(GetFuncAddr(&Epilogue));
+    uintptr end   = (uintptr)(GetFuncAddr(&ldr_epilogue));
     uint    size  = end - begin;
-    if (!loader->FlushInstructionCache(CURRENT_PROCESS, (LPCVOID)begin, size))
-    {
-        return false;
-    }
-    // clean useless API functions in structure
-    RandBuf((byte*)(&loader->VirtualProtect), sizeof(uintptr));
-    return true;
+    return loader->FlushInstructionCache(CURRENT_PROCESS, (LPCVOID)begin, size);
 }
 
 // updatePELoaderPointer will replace hard encode address to the actual address.
@@ -882,3 +896,12 @@ static errno ldr_exit_process()
     }
     return errno;
 }
+
+// prevent it be linked to other functions.
+#pragma optimize("", off)
+static void ldr_epilogue()
+{
+    byte var = 10;
+    return;
+}
+#pragma optimize("", on)
