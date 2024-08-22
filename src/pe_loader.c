@@ -77,7 +77,7 @@ static bool  processIAT(PELoader* loader);
 static bool  updatePELoaderPointer(PELoader* loader);
 static errno initPELoaderEnvironment(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
-static void  cleanPELoader(PELoader* loader);
+static errno cleanPELoader(PELoader* loader);
 
 static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
 static void* getPELoaderMethods(byte* module, LPCSTR lpProcName);
@@ -550,9 +550,57 @@ static bool flushInstructionCache(PELoader* loader)
     return loader->FlushInstructionCache(CURRENT_PROCESS, (LPCVOID)begin, size);
 }
 
-static void cleanPELoader(PELoader* loader)
+static errno cleanPELoader(PELoader* loader)
 {
+    errno errno = NO_ERROR;
 
+    CloseHandle_t closeHandle = loader->CloseHandle;
+    VirtualFree_t virtualFree = loader->VirtualFree;
+
+    if (closeHandle != NULL)
+    {
+        // close global mutex
+        if (loader->hMutex != NULL)
+        {
+            if (!closeHandle(loader->hMutex) && errno == NO_ERROR)
+            {
+                errno = ERR_LOADER_CLEAN_G_MUTEX;
+            }
+        }
+        // close exit code mutex
+        if (loader->ExitCodeMu != NULL)
+        {
+            if (!closeHandle(loader->ExitCodeMu) && errno == NO_ERROR)
+            {
+                errno = ERR_LOADER_CLEAN_EC_MUTEX;
+            }
+        }
+    }
+
+    if (virtualFree != NULL)
+    {
+        // release memory page for PE image
+        void* peImage = (void*)(loader->PEImage);
+        if (peImage != NULL)
+        {
+            RandBuf(peImage, loader->ImageSize);
+            if (!virtualFree(peImage, 0, MEM_RELEASE) && errno == NO_ERROR)
+            {
+                errno = ERR_LOADER_CLEAN_FREE_PE;
+            }
+        }
+        // release main memory page
+        void* memPage = loader->MainMemPage;
+        if (memPage != NULL)
+        {
+            RandBuf(memPage, MAIN_MEM_PAGE_SIZE);
+            if (!virtualFree(memPage, 0, MEM_RELEASE) && errno == NO_ERROR)
+            {
+                errno = ERR_LOADER_CLEAN_FREE_MEM;
+            }
+        }
+    }
+    return errno;
 }
 
 // updatePELoaderPointer will replace hard encode address to the actual address.
@@ -845,37 +893,19 @@ errno LDR_Destroy()
         return ERR_LOADER_LOCK;
     }
 
-    errno errno = ldr_exit_process();
+    errno err = NO_ERROR;
 
-    // close global mutex
-    if (!loader->CloseHandle(loader->hMutex) && errno == NO_ERROR)
+    errno errep = ldr_exit_process();
+    if (errep != NO_ERROR && err == NO_ERROR)
     {
-        errno = ERR_LOADER_CLOSE_G_MUTEX;
+        err = errep;
     }
-    // close exit code mutex
-    if (!loader->CloseHandle(loader->ExitCodeMu) && errno == NO_ERROR)
+    errno errcl = cleanPELoader(loader);
+    if (errcl != NO_ERROR && err == NO_ERROR)
     {
-        errno = ERR_LOADER_CLOSE_EC_MUTEX;
+        err = errcl;
     }
-
-    // release memory page for PE image
-    void* peImage = (void*)(loader->PEImage);
-    RandBuf(peImage, loader->ImageSize);
-    if (!loader->VirtualFree(peImage, 0, MEM_RELEASE) && errno == NO_ERROR)
-    {
-        errno = ERR_LOADER_FREE_PE_IMAGE;
-    }
-
-    // must copy variables in PELoader before call RandBuf
-    VirtualFree_t virtualFree = loader->VirtualFree;
-    void* memPage = loader->MainMemPage;
-    // release main memory page
-    RandBuf(memPage, MAIN_MEM_PAGE_SIZE);
-    if (!loader->VirtualFree(memPage, 0, MEM_RELEASE) && errno == NO_ERROR)
-    {
-        errno = ERR_LOADER_FREE_MAIN_PAGE;
-    }
-    return errno;
+    return err;
 }
 
 static errno ldr_exit_process()
