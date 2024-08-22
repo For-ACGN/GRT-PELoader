@@ -49,7 +49,7 @@ bool TestInitPELoader()
         .StdInput    = NULL,
         .StdOutput   = NULL,
         .StdError    = NULL,
-        .WaitMain    = true,
+        .WaitMain    = false,
 
         .FindAPI       = &FindAPI,
         .AdjustProtect = true,
@@ -58,6 +58,39 @@ bool TestInitPELoader()
     if (pe_loader == NULL)
     {
         printf_s("failed to initialize PE loader: 0x%lX\n", GetLastErrno());
+        return false;
+    }
+    return true;
+}
+
+bool TestPELoader_Execute()
+{
+    uint exitCode = pe_loader->Execute();
+    if (exitCode != 0)
+    {
+        printf_s("unexpected exit code: 0x%zX\n", exitCode);
+        return false;
+    }
+    return true;
+}
+
+bool TestPELoader_Exit()
+{
+    errno errno = pe_loader->Exit();
+    if (errno != NO_ERROR)
+    {
+        printf_s("failed to exit PE loader: 0x%lX\n", GetLastErrno());
+        return false;
+    }
+    return true;
+}
+
+bool TestPELoader_Destroy()
+{
+    errno errno = pe_loader->Destroy();
+    if (errno != NO_ERROR)
+    {
+        printf_s("failed to destroy PE loader: 0x%lX\n", GetLastErrno());
         return false;
     }
     return true;
