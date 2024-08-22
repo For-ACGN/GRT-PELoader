@@ -35,6 +35,7 @@ typedef struct {
     // loader context
     void*  MainMemPage; // store all structures
     HANDLE hMutex;      // global mutex
+    HANDLE ExitCodeMu;  // lock exit code
 
     // store PE image information
     uintptr PEImage;
@@ -526,9 +527,16 @@ static errno initPELoaderEnvironment(PELoader* loader)
     HANDLE hMutex = loader->CreateMutexA(NULL, false, NULL);
     if (hMutex == NULL)
     {
-        return ERR_LOADER_CREATE_MUTEX;
+        return ERR_LOADER_CREATE_G_MUTEX;
     }
     loader->hMutex = hMutex;
+    // create exit code mutex
+    HANDLE exitCodeMu = loader->CreateMutexA(NULL, false, NULL);
+    if (exitCodeMu == NULL)
+    {
+        return ERR_LOADER_CREATE_EC_MUTEX;
+    }
+    loader->ExitCodeMu = exitCodeMu;
     // clean useless API functions in runtime structure
     RandBuf((byte*)(&loader->CreateMutexA), sizeof(uintptr));
     return NO_ERROR;
@@ -721,28 +729,28 @@ static void set_exit_code(uint code)
 {
     PELoader* loader = getPELoaderPointer();
 
-    if (!ldr_lock(loader))
+    if (loader->WaitForSingleObject(loader->ExitCodeMu, INFINITE) != WAIT_OBJECT_0)
     {
         return;
     }
 
     *loader->ExitCode = code;
 
-    ldr_unlock(loader);
+    loader->ReleaseMutex(loader->ExitCodeMu);
 }
 
 static uint get_exit_code()
 {
     PELoader* loader = getPELoaderPointer();
 
-    if (!ldr_lock(loader))
+    if (loader->WaitForSingleObject(loader->ExitCodeMu, INFINITE) != WAIT_OBJECT_0)
     {
         return 1;
     }
 
     uint code = *loader->ExitCode;
 
-    if (!ldr_unlock(loader))
+    if (!loader->ReleaseMutex(loader->ExitCodeMu))
     {
         return 1;
     }
@@ -842,7 +850,12 @@ errno LDR_Destroy()
     // close global mutex
     if (!loader->CloseHandle(loader->hMutex) && errno == NO_ERROR)
     {
-        errno = ERR_LOADER_CLOSE_MUTEX;
+        errno = ERR_LOADER_CLOSE_G_MUTEX;
+    }
+    // close exit code mutex
+    if (!loader->CloseHandle(loader->ExitCodeMu) && errno == NO_ERROR)
+    {
+        errno = ERR_LOADER_CLOSE_EC_MUTEX;
     }
 
     // release memory page for PE image
