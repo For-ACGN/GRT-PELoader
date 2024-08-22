@@ -14,6 +14,10 @@ bool TestLibString();
 bool TestRandom();
 
 bool TestInitPELoader();
+
+bool TestPELoader_Execute();
+bool TestPELoader_Exit();
+bool TestPELoader_Destroy();
 #pragma warning(pop)
 
 typedef bool (*test_t)();
@@ -25,6 +29,10 @@ static unit tests[] =
     { "Random",     TestRandom    },
 
     { "InitPELoader", TestInitPELoader },
+
+    { "PELoader_Execute", TestPELoader_Execute },
+    { "PELoader_Exit",    TestPELoader_Exit    },
+    { "PELoader_Destroy", TestPELoader_Destroy },
 };
 
 #endif // TEST_H
