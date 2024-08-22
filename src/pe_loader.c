@@ -66,7 +66,7 @@ errno LDR_Destroy();
 static PELoader* getPELoaderPointer();
 
 static void* allocLoaderMemPage(PELoader_Cfg* cfg);
-static bool  initLoaderAPI(PELoader* loader);
+static bool  initPELoaderAPI(PELoader* loader);
 static bool  adjustPageProtect(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
@@ -76,6 +76,7 @@ static bool  processIAT(PELoader* loader);
 static bool  updatePELoaderPointer(PELoader* loader);
 static errno initPELoaderEnvironment(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
+static void  cleanPELoader(PELoader* loader);
 
 static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
 static void* getPELoaderMethods(byte* module, LPCSTR lpProcName);
@@ -119,7 +120,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     errno errno = NO_ERROR;
     for (;;)
     {
-        if (!initLoaderAPI(loader))
+        if (!initPELoaderAPI(loader))
         {
             errno = ERR_LOADER_INIT_API;
             break;
@@ -134,12 +135,12 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
             errno = ERR_LOADER_UPDATE_PTR;
             break;
         }
-        errno = loadPEImage(loader);
+        errno = initPELoaderEnvironment(loader);
         if (errno != NO_ERROR)
         {
             break;
         }
-        errno = initPELoaderEnvironment(loader);
+        errno = loadPEImage(loader);
         if (errno != NO_ERROR)
         {
             break;
@@ -152,6 +153,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     }
     if (errno != NO_ERROR)
     {
+        cleanPELoader(loader);
         SetLastErrno(errno);
         return NULL;
     }
@@ -159,6 +161,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     PELoader_M* module = (PELoader_M*)moduleAddr;
     // process variables
     module->EntryPoint = (void*)(loader->EntryPoint);
+    module->ExitCode   = 0;
     // loader module methods
     module->Execute = GetFuncAddr(&LDR_Execute);
     module->Exit    = GetFuncAddr(&LDR_Exit);
@@ -192,7 +195,7 @@ static void* allocLoaderMemPage(PELoader_Cfg* cfg)
     return addr;
 }
 
-static bool initLoaderAPI(PELoader* loader)
+static bool initPELoaderAPI(PELoader* loader)
 {
     typedef struct { 
         uint hash; uint key; void* proc;
@@ -537,6 +540,11 @@ static bool flushInstructionCache(PELoader* loader)
     uintptr end   = (uintptr)(GetFuncAddr(&ldr_epilogue));
     uint    size  = end - begin;
     return loader->FlushInstructionCache(CURRENT_PROCESS, (LPCVOID)begin, size);
+}
+
+static void cleanPELoader(PELoader* loader)
+{
+
 }
 
 // updatePELoaderPointer will replace hard encode address to the actual address.
