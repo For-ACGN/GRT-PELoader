@@ -124,11 +124,6 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
             errno = ERR_LOADER_INIT_API;
             break;
         }
-        errno = loadPEImage(loader);
-        if (errno != NO_ERROR)
-        {
-            break;
-        }
         if (!adjustPageProtect(loader))
         {
             errno = ERR_LOADER_ADJUST_PROTECT;
@@ -137,6 +132,11 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
         if (!updatePELoaderPointer(loader))
         {
             errno = ERR_LOADER_UPDATE_PTR;
+            break;
+        }
+        errno = loadPEImage(loader);
+        if (errno != NO_ERROR)
+        {
             break;
         }
         errno = initPELoaderEnvironment(loader);
