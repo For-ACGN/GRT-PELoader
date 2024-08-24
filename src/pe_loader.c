@@ -69,13 +69,13 @@ static PELoader* getPELoaderPointer();
 static void* allocLoaderMemPage(PELoader_Cfg* cfg);
 static bool  initPELoaderAPI(PELoader* loader);
 static bool  adjustPageProtect(PELoader* loader);
+static bool  updatePELoaderPointer(PELoader* loader);
+static errno initPELoaderEnvironment(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
 static bool  processIAT(PELoader* loader);
-static bool  updatePELoaderPointer(PELoader* loader);
-static errno initPELoaderEnvironment(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
 static errno cleanPELoader(PELoader* loader);
 
@@ -192,7 +192,7 @@ static void* allocLoaderMemPage(PELoader_Cfg* cfg)
         return NULL;
     }
     RandBuf(addr, MAIN_MEM_PAGE_SIZE);
-    dbg_log("[PE Loader]", "Main Page: 0x%zX\n", addr);
+    dbg_log("[PE Loader]", "Main Page: 0x%zX", addr);
     return addr;
 }
 
@@ -281,6 +281,46 @@ static bool adjustPageProtect(PELoader* loader)
     return loader->VirtualProtect((void*)begin, size, PAGE_EXECUTE_READWRITE, &old);
 }
 
+static bool updatePELoaderPointer(PELoader* loader)
+{
+    bool success = false;
+    uintptr target = (uintptr)(GetFuncAddr(&getPELoaderPointer));
+    for (uintptr i = 0; i < 64; i++)
+    {
+        uintptr* pointer = (uintptr*)(target);
+        if (*pointer != PE_LOADER_POINTER)
+        {
+            target++;
+            continue;
+        }
+        *pointer = (uintptr)loader;
+        success = true;
+        break;
+    }
+    return success;
+}
+
+static errno initPELoaderEnvironment(PELoader* loader)
+{
+    // create global mutex
+    HANDLE hMutex = loader->CreateMutexA(NULL, false, NULL);
+    if (hMutex == NULL)
+    {
+        return ERR_LOADER_CREATE_G_MUTEX;
+    }
+    loader->hMutex = hMutex;
+    // create exit code mutex
+    HANDLE exitCodeMu = loader->CreateMutexA(NULL, false, NULL);
+    if (exitCodeMu == NULL)
+    {
+        return ERR_LOADER_CREATE_EC_MUTEX;
+    }
+    loader->ExitCodeMu = exitCodeMu;
+    // clean useless API functions in runtime structure
+    RandBuf((byte*)(&loader->CreateMutexA), sizeof(uintptr));
+    return NO_ERROR;
+}
+
 static errno loadPEImage(PELoader* loader)
 {
     if (!parsePEImage(loader))
@@ -299,7 +339,7 @@ static errno loadPEImage(PELoader* loader)
     {
         return ERR_LOADER_PROCESS_IAT;
     }
-    dbg_log("[PE Loader]", "image: 0x%zX\n", loader->PEImage);
+    dbg_log("[PE Loader]", "image: 0x%zX", loader->PEImage);
     return NO_ERROR;
 }
 
@@ -502,46 +542,6 @@ static bool processIAT(PELoader* loader)
     return true;
 }
 
-static bool updatePELoaderPointer(PELoader* loader)
-{
-    bool success = false;
-    uintptr target = (uintptr)(GetFuncAddr(&getPELoaderPointer));
-    for (uintptr i = 0; i < 64; i++)
-    {
-        uintptr* pointer = (uintptr*)(target);
-        if (*pointer != PE_LOADER_POINTER)
-        {
-            target++;
-            continue;
-        }
-        *pointer = (uintptr)loader;
-        success = true;
-        break;
-    }
-    return success;
-}
-
-static errno initPELoaderEnvironment(PELoader* loader)
-{
-    // create global mutex
-    HANDLE hMutex = loader->CreateMutexA(NULL, false, NULL);
-    if (hMutex == NULL)
-    {
-        return ERR_LOADER_CREATE_G_MUTEX;
-    }
-    loader->hMutex = hMutex;
-    // create exit code mutex
-    HANDLE exitCodeMu = loader->CreateMutexA(NULL, false, NULL);
-    if (exitCodeMu == NULL)
-    {
-        return ERR_LOADER_CREATE_EC_MUTEX;
-    }
-    loader->ExitCodeMu = exitCodeMu;
-    // clean useless API functions in runtime structure
-    RandBuf((byte*)(&loader->CreateMutexA), sizeof(uintptr));
-    return NO_ERROR;
-}
-
 static bool flushInstructionCache(PELoader* loader)
 {
     uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
@@ -694,7 +694,7 @@ static LPSTR hook_GetCommandLineA()
 {
     PELoader* loader = getPELoaderPointer();
 
-    dbg_log("[PE Loader]", "GetCommandLineA\n");
+    dbg_log("[PE Loader]", "GetCommandLineA");
 
     // try to get it from config
     LPSTR cmdLine = loader->Config.CommandLine;
@@ -710,7 +710,7 @@ static LPWSTR hook_GetCommandLineW()
 {
     PELoader* loader = getPELoaderPointer();
 
-    dbg_log("[PE Loader]", "GetCommandLineW\n");
+    dbg_log("[PE Loader]", "GetCommandLineW");
 
     // try to get it from config
     LPWSTR cmdLine = loader->Config.CommandLine;
@@ -725,7 +725,7 @@ static HANDLE hook_GetStdHandle(DWORD nStdHandle)
 {
     PELoader* loader = getPELoaderPointer();
 
-    dbg_log("[PE Loader]", "GetStdHandle: %d\n", nStdHandle);
+    dbg_log("[PE Loader]", "GetStdHandle: %d", nStdHandle);
 
     // try to get it from config
     HANDLE hStdInput  = loader->Config.StdInput;
@@ -761,7 +761,7 @@ static void hook_ExitProcess(UINT uExitCode)
 {
     PELoader* loader = getPELoaderPointer();
 
-    dbg_log("[PE Loader]", "ExitProcess: %zu\n", uExitCode);
+    dbg_log("[PE Loader]", "ExitProcess: %zu", uExitCode);
 
     set_exit_code(uExitCode);
 
