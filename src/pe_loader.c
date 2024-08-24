@@ -80,18 +80,18 @@ static bool  flushInstructionCache(PELoader* loader);
 static errno cleanPELoader(PELoader* loader);
 
 static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
-static void* getPELoaderMethods(byte* module, LPCSTR lpProcName);
-static void  set_exit_code(uint code);
-static uint  get_exit_code();
-static void  pe_entry_point();
+static void* ldr_getMethods(byte* module, LPCSTR lpProcName);
 static errno ldr_exit_process();
+static void  ldr_epilogue();
+
+static void pe_entry_point();
+static void set_exit_code(uint code);
+static uint get_exit_code();
 
 static LPSTR  hook_GetCommandLineA();
 static LPWSTR hook_GetCommandLineW();
 static HANDLE hook_GetStdHandle(DWORD nStdHandle);
 static void   hook_ExitProcess(UINT uExitCode);
-
-static void ldr_epilogue();
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
 {
@@ -640,19 +640,21 @@ void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
     {
         return NULL;
     }
+    // process ordinal import
+    if (lpProcName <= (LPCSTR)(0xFFFF))
+    {
+        return loader->GetProcAddress(hModule, lpProcName);
+    }
     // check is internal methods
-    void* method = getPELoaderMethods(&module[0], lpProcName);
+    void* method = ldr_getMethods(&module[0], lpProcName);
     if (method != NULL)
     {
         return method;
     }
-    // generate key for calculate Windows API hash
-    uint key  = RandUint((uint64)(hModule) + (uint64)(lpProcName));
-    uint hash = HashAPI_W((uint16*)(&module[0]), (byte*)lpProcName, key);
-    return loader->Config.FindAPI(hash, key);
+    return loader->GetProcAddress(hModule, lpProcName);
 }
 
-static void* getPELoaderMethods(byte* module, LPCSTR lpProcName)
+static void* ldr_getMethods(byte* module, LPCSTR lpProcName)
 {
     PELoader* loader = getPELoaderPointer();
 
@@ -668,9 +670,9 @@ static void* getPELoaderMethods(byte* module, LPCSTR lpProcName)
     };
 #elif _WIN32
     {
-        { 0xA23FAC0E6398838A, 0xE4990D7D4933EE6A, GetFuncAddr(&hook_GetCommandLineA) },
-        { 0xABD1E8F0D28E9F46, 0xAF34F5979D300C70, GetFuncAddr(&hook_GetCommandLineW) },
-        { 0xC9C5D350BB118FAE, 0x061A602F681F2636, GetFuncAddr(&hook_ExitProcess) },
+        { 0x7971F5C6, 0xC2A37949, GetFuncAddr(&hook_GetCommandLineA) },
+        { 0xB921D9EC, 0xD12A689C, GetFuncAddr(&hook_GetCommandLineW) },
+        { 0x2BE03D8D, 0xDEB0A6F3, GetFuncAddr(&hook_ExitProcess) },
     };
 #endif
     for (int i = 0; i < arrlen(methods); i++)
