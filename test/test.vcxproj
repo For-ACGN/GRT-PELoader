@@ -15,14 +15,14 @@
     <ClInclude Include="test.h" />
     <ClInclude Include="..\include\c_types.h" />
     <ClInclude Include="..\include\windows_t.h" />
-	<ClInclude Include="..\include\rel_addr.h" />
+    <ClInclude Include="..\include\rel_addr.h" />
     <ClInclude Include="..\include\lib_memory.h" />
     <ClInclude Include="..\include\lib_string.h" />
     <ClInclude Include="..\include\hash_api.h" />
     <ClInclude Include="..\include\win_api.h" />
     <ClInclude Include="..\include\random.h" />
     <ClInclude Include="..\include\errno.h" />
-	<ClInclude Include="..\include\runtime.h" />
+    <ClInclude Include="..\include\runtime.h" />
     <ClInclude Include="..\include\pe_loader.h" />
     <ClInclude Include="..\include\debug.h" />
     <ClInclude Include="..\include\epilogue.h" />
@@ -33,7 +33,7 @@
     <ClCompile Include="random_test.c" />
     <ClCompile Include="pe_loader_test.c" />
     <ClCompile Include="..\src\pe_loader.c" />
-	<ClCompile Include="..\src\rel_addr.c" />
+    <ClCompile Include="..\src\rel_addr.c" />
     <ClCompile Include="..\src\lib_memory.c" />
     <ClCompile Include="..\src\lib_string.c" />
     <ClCompile Include="..\src\hash_api.c" />
@@ -43,6 +43,7 @@
     <ClCompile Include="..\src\debug.c" />
   </ItemGroup>
   <ItemGroup>
+	<MASM Include="..\asm\runtime.asm" />
     <MASM Include="..\asm\epilogue.asm" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -114,6 +115,7 @@
     </Link>
     <MASM>
       <PreprocessorDefinitions>_WIN32</PreprocessorDefinitions>
+      <IncludePaths>$(SolutionDir)asm</IncludePaths>
     </MASM>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -140,6 +142,9 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
     </Link>
+    <MASM>
+      <IncludePaths>$(SolutionDir)asm</IncludePaths>
+    </MASM>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

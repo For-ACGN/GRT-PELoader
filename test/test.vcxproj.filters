@@ -105,5 +105,8 @@
     <MASM Include="..\asm\epilogue.asm">
       <Filter>Assembly</Filter>
     </MASM>
+    <MASM Include="..\asm\runtime.asm">
+      <Filter>Assembly</Filter>
+    </MASM>
   </ItemGroup>
 </Project>
