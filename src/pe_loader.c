@@ -631,6 +631,11 @@ void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 {
     PELoader* loader = getPELoaderPointer();
 
+    // process ordinal import
+    if (lpProcName <= (LPCSTR)(0xFFFF))
+    {
+        return loader->GetProcAddress(hModule, lpProcName);
+    }
     // use "mem_clean" for prevent incorrect compiler
     // optimize and generate incorrect shellcode
     byte module[MAX_PATH];
@@ -640,12 +645,7 @@ void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
     {
         return NULL;
     }
-    // process ordinal import
-    if (lpProcName <= (LPCSTR)(0xFFFF))
-    {
-        return loader->GetProcAddress(hModule, lpProcName);
-    }
-    // check is internal methods
+    // check is PE Loader internal methods
     void* method = ldr_getMethods(&module[0], lpProcName);
     if (method != NULL)
     {
