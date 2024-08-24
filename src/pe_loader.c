@@ -666,12 +666,14 @@ static void* ldr_getMethods(byte* module, LPCSTR lpProcName)
     {
         { 0xA23FAC0E6398838A, 0xE4990D7D4933EE6A, GetFuncAddr(&hook_GetCommandLineA) },
         { 0xABD1E8F0D28E9F46, 0xAF34F5979D300C70, GetFuncAddr(&hook_GetCommandLineW) },
+        { 0x33F761AFCEBF69AA, 0x6D591538B8A5428F, GetFuncAddr(&hook_GetStdHandle) },
         { 0xC9C5D350BB118FAE, 0x061A602F681F2636, GetFuncAddr(&hook_ExitProcess) },
     };
 #elif _WIN32
     {
         { 0x7971F5C6, 0xC2A37949, GetFuncAddr(&hook_GetCommandLineA) },
         { 0xB921D9EC, 0xD12A689C, GetFuncAddr(&hook_GetCommandLineW) },
+        { 0x8ED77E9F, 0xF7E28EA3, GetFuncAddr(&hook_GetStdHandle) },
         { 0x2BE03D8D, 0xDEB0A6F3, GetFuncAddr(&hook_ExitProcess) },
     };
 #endif
