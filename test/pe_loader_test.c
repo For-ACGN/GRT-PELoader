@@ -2,6 +2,7 @@
 #include "c_types.h"
 #include "hash_api.h"
 #include "errno.h"
+#include "runtime.h"
 #include "pe_loader.h"
 #include "test.h"
 
@@ -9,13 +10,13 @@ bool TestInitPELoader()
 {
     // read PE file
 #ifdef _WIN64
-    FILE* file = fopen("testdata\\go_amd64.exe", "rb");
+    FILE* file = fopen("testdata\\go_amd64.exe", "rb"); 
 #elif _WIN32
     FILE* file = fopen("testdata\\go_386.exe", "rb");
 #endif
     if (file == NULL)
     {
-        printf_s("failed to open test pe file");
+        printf_s("failed to open test pe file\n");
         return false;
     }
     // get file size
@@ -36,25 +37,38 @@ bool TestInitPELoader()
     uint n = fread(buf, fileSize, 1, file);
     if (n != 1)
     {
-        printf_s("failed to read test pe file");
+        printf_s("failed to read test pe file\n");
         return false;
     }
     fclose(file);
 
+    Runtime_Opts opts = {
+        .BootInstAddress     = NULL,
+        .NotEraseInstruction = false,
+        .NotAdjustProtect    = false,
+        .TrackCurrentThread  = false,
+    };
+    Runtime_M* runtime = InitRuntime(&opts);
+    if (runtime == NULL)
+    {
+        printf_s("failed to initialize runtime: 0x%lX\n", GetLastErrno());
+        return false;
+    }
+
     LPSTR cmdLine = "loader.exe -p1 123 -p2 \"test\"";
 
-    PELoader_Cfg config = {
+    PELoader_Cfg cfg = {
         .Image       = buf,
         .CommandLine = cmdLine,
         .StdInput    = NULL,
         .StdOutput   = NULL,
         .StdError    = NULL,
-        .WaitMain    = false,
+        .WaitMain    = true,
 
-        .FindAPI       = &FindAPI,
+        .FindAPI       = FindAPI, // runtime->FindAPI
         .AdjustProtect = true,
     };
-    pe_loader = InitPELoader(&config);
+    pe_loader = InitPELoader(&cfg);
     if (pe_loader == NULL)
     {
         printf_s("failed to initialize PE loader: 0x%lX\n", GetLastErrno());
@@ -65,6 +79,11 @@ bool TestInitPELoader()
 
 bool TestPELoader_Execute()
 {
+    if (pe_loader == NULL)
+    {
+        return false;
+    }
+
     uint exitCode = pe_loader->Execute();
     if (exitCode != 0)
     {
@@ -76,6 +95,11 @@ bool TestPELoader_Execute()
 
 bool TestPELoader_Exit()
 {
+    if (pe_loader == NULL)
+    {
+        return false;
+    }
+
     errno errno = pe_loader->Exit();
     if (errno != NO_ERROR)
     {
@@ -87,6 +111,11 @@ bool TestPELoader_Exit()
 
 bool TestPELoader_Destroy()
 {
+    if (pe_loader == NULL)
+    {
+        return false;
+    }
+
     errno errno = pe_loader->Destroy();
     if (errno != NO_ERROR)
     {
