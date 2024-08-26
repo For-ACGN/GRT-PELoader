@@ -9,7 +9,7 @@ static errno loadPELoaderConfig(Runtime_M* runtime, PELoader_Cfg* config);
 
 errno Boot()
 {
-    // initialize Gleam-RT
+    // initialize Gleam-RT for PE Loader
     Runtime_Opts opts = {
         .BootInstAddress     = GetFuncAddr(&Boot),
         .NotEraseInstruction = false,
@@ -23,7 +23,7 @@ errno Boot()
     }
 
     // load config and initialize PE Loader
-    PELoader_Cfg cfg = {
+    PELoader_Cfg config = {
         .FindAPI = runtime->FindAPI,
 
         .Image       = NULL,
@@ -40,12 +40,12 @@ errno Boot()
     errno err = NO_ERROR;
     for (;;)
     {
-        err = loadPELoaderConfig(runtime, &cfg);
+        err = loadPELoaderConfig(runtime, &config);
         if (err != NO_ERROR)
         {
             break;
         }
-        loader = InitPELoader(&cfg);
+        loader = InitPELoader(&config);
         if (loader == NULL)
         {
             err = GetLastErrno();
@@ -54,18 +54,29 @@ errno Boot()
         break;
     }
     runtime->EraseAllArgs();
-    if (err != NO_ERROR)
+    if (err != NO_ERROR || loader == NULL)
     {
         runtime->Exit();
         return err;
     }
 
     // execute PE file
-
-
-
-
-    return NO_ERROR;
+    uint exitCode = loader->Execute();
+    if (!config.WaitMain)
+    {
+        return (errno)exitCode;
+    }
+    errno eld = loader->Destroy();
+    if (eld != NO_ERROR && err == NO_ERROR)
+    {
+        err = eld;
+    }
+    errno ere = runtime->Exit();
+    if (ere != NO_ERROR && err == NO_ERROR)
+    {
+        err = ere;
+    }
+    return err;
 }
 
 static errno loadPELoaderConfig(Runtime_M* runtime, PELoader_Cfg* config)
@@ -117,7 +128,8 @@ static errno loadPELoaderConfig(Runtime_M* runtime, PELoader_Cfg* config)
         return ERR_INVALID_STD_ERROR;
     }
     // load wait main, it must be true of false
-    if (!runtime->GetArgument(ARG_IDX_WAIT_MAIN, &config->WaitMain, &size))
+    bool* WaitMain = NULL;
+    if (!runtime->GetArgument(ARG_IDX_WAIT_MAIN, &WaitMain, &size))
     {
         return ERR_NOT_FOUND_WAIT_MAIN;
     }
@@ -125,5 +137,6 @@ static errno loadPELoaderConfig(Runtime_M* runtime, PELoader_Cfg* config)
     {
         return ERR_INVALID_WAIT_MAIN;
     }
+    config->WaitMain = *WaitMain;
     return NO_ERROR;
 }
