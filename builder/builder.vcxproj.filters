@@ -1,0 +1,121 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Header">
+      <UniqueIdentifier>{6BA0B577-B9DA-4333-A0EE-95CCCD9367C2}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Source">
+      <UniqueIdentifier>{F86CCDEF-86B7-4006-A18A-C0380670AB39}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Assembly">
+      <UniqueIdentifier>{D9DAC937-AD2C-4736-95A9-09CACC5796A9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Assembly\MSVC">
+      <UniqueIdentifier>{02aa8fff-2d97-4567-ae83-e7aa24a99109}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\include\c_types.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\debug.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\epilogue.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\errno.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\hash_api.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\lib_memory.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\lib_string.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\pe_image.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\pe_loader.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\random.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\rel_addr.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\runtime.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\win_api.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\windows_t.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="..\boot\boot.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="build.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\errno.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\hash_api.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\lib_memory.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\lib_string.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\pe_loader.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\random.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\rel_addr.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\win_api.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\boot\boot.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="builder.c">
+      <Filter>Source</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="..\asm\epilogue.asm">
+      <Filter>Assembly</Filter>
+    </MASM>
+    <MASM Include="..\asm\runtime.asm">
+      <Filter>Assembly</Filter>
+    </MASM>
+    <MASM Include="..\asm\msvc\ullrem.asm">
+      <Filter>Assembly\MSVC</Filter>
+    </MASM>
+    <MASM Include="..\asm\msvc\ullshr.asm">
+      <Filter>Assembly\MSVC</Filter>
+    </MASM>
+    <MASM Include="..\asm\msvc\llmul.asm">
+      <Filter>Assembly\MSVC</Filter>
+    </MASM>
+    <MASM Include="..\asm\msvc\llshl.asm">
+      <Filter>Assembly\MSVC</Filter>
+    </MASM>
+  </ItemGroup>
+</Project>
