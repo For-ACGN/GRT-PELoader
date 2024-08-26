@@ -82,6 +82,7 @@ static errno cleanPELoader(PELoader* loader);
 
 static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
 static void* ldr_getMethods(byte* module, LPCSTR lpProcName);
+static errno ldr_init_mutex();
 static errno ldr_exit_process();
 static void  ldr_epilogue();
 
@@ -310,15 +311,6 @@ static errno initPELoaderEnvironment(PELoader* loader)
         return ERR_LOADER_CREATE_G_MUTEX;
     }
     loader->hMutex = hMutex;
-    // create exit code mutex
-    HANDLE exitCodeMu = loader->CreateMutexA(NULL, false, NULL);
-    if (exitCodeMu == NULL)
-    {
-        return ERR_LOADER_CREATE_EC_MUTEX;
-    }
-    loader->ExitCodeMu = exitCodeMu;
-    // clean useless API functions in runtime structure
-    RandBuf((byte*)(&loader->CreateMutexA), sizeof(uintptr));
     return NO_ERROR;
 }
 
@@ -827,6 +819,12 @@ uint LDR_Execute()
     bool success = true;
     for (;;)
     {
+        // initialize exit code mutex
+        if (ldr_init_mutex() != NO_ERROR)
+        {
+            success = false;
+            break;
+        }
         // make callback about DLL_PROCESS_DETACH
         if (loader->IsDLL)
         {
@@ -915,6 +913,25 @@ errno LDR_Destroy()
         err = errcl;
     }
     return err;
+}
+
+static errno ldr_init_mutex()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    // close old exit code mutex
+    if (loader->ExitCodeMu != NULL)
+    {
+        loader->CloseHandle(loader->ExitCodeMu);
+    }
+    // create new exit code mutex
+    HANDLE exitCodeMu = loader->CreateMutexA(NULL, false, NULL);
+    if (exitCodeMu == NULL)
+    {
+        return ERR_LOADER_CREATE_EC_MUTEX;
+    }
+    loader->ExitCodeMu = exitCodeMu;
+    return NO_ERROR;
 }
 
 static errno ldr_exit_process()
