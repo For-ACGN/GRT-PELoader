@@ -1,5 +1,6 @@
 #include "c_types.h"
 #include "windows_t.h"
+#include "pe_image.h"
 #include "rel_addr.h"
 #include "lib_memory.h"
 #include "hash_api.h"
@@ -614,15 +615,19 @@ static PELoader* getPELoaderPointer()
 #pragma optimize("", on)
 
 __declspec(noinline)
-static bool ldr_lock(PELoader* loader)
+static bool ldr_lock()
 {
+    PELoader* loader = getPELoaderPointer();
+
     uint32 event = loader->WaitForSingleObject(loader->hMutex, INFINITE);
     return event == WAIT_OBJECT_0;
 }
 
 __declspec(noinline)
-static bool ldr_unlock(PELoader* loader)
+static bool ldr_unlock()
 {
+    PELoader* loader = getPELoaderPointer();
+
     return loader->ReleaseMutex(loader->hMutex);
 }
 
@@ -814,7 +819,7 @@ uint LDR_Execute()
 {
     PELoader* loader = getPELoaderPointer();
 
-    if (!ldr_lock(loader))
+    if (!ldr_lock())
     {
         return 0x1001;
     }
@@ -856,7 +861,7 @@ uint LDR_Execute()
         break;
     }
 
-    if (!ldr_unlock(loader))
+    if (!ldr_unlock())
     {
         return 0x1002;
     }
@@ -873,14 +878,14 @@ errno LDR_Exit()
 {
     PELoader* loader = getPELoaderPointer();
 
-    if (!ldr_lock(loader))
+    if (!ldr_lock())
     {
         return ERR_LOADER_LOCK;
     }
 
     errno errno = ldr_exit_process();
 
-    if (!ldr_unlock(loader))
+    if (!ldr_unlock())
     {
         return ERR_LOADER_UNLOCK;
     }
@@ -892,7 +897,7 @@ errno LDR_Destroy()
 {
     PELoader* loader = getPELoaderPointer();
 
-    if (!ldr_lock(loader))
+    if (!ldr_lock())
     {
         return ERR_LOADER_LOCK;
     }
