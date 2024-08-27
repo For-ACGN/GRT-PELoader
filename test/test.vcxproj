@@ -15,6 +15,7 @@
     <ClInclude Include="test.h" />
     <ClInclude Include="..\include\c_types.h" />
     <ClInclude Include="..\include\windows_t.h" />
+    <ClInclude Include="..\include\pe_image.h" />
     <ClInclude Include="..\include\rel_addr.h" />
     <ClInclude Include="..\include\lib_memory.h" />
     <ClInclude Include="..\include\lib_string.h" />
@@ -43,7 +44,7 @@
     <ClCompile Include="..\src\debug.c" />
   </ItemGroup>
   <ItemGroup>
-	<MASM Include="..\asm\runtime.asm" />
+    <MASM Include="..\asm\runtime.asm" />
     <MASM Include="..\asm\epilogue.asm" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -115,7 +116,6 @@
     </Link>
     <MASM>
       <PreprocessorDefinitions>_WIN32</PreprocessorDefinitions>
-      <IncludePaths>$(SolutionDir)asm</IncludePaths>
     </MASM>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -142,9 +142,6 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
     </Link>
-    <MASM>
-      <IncludePaths>$(SolutionDir)asm</IncludePaths>
-    </MASM>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
