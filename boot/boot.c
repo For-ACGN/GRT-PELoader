@@ -66,6 +66,7 @@ errno Boot()
     {
         return (errno)exitCode;
     }
+    // destroy pe loader and exit runtime
     errno eld = loader->Destroy();
     if (eld != NO_ERROR && err == NO_ERROR)
     {
@@ -75,6 +76,11 @@ errno Boot()
     if (ere != NO_ERROR && err == NO_ERROR)
     {
         err = ere;
+    }
+    // set exit code from pe image
+    if (exitCode != 0 && err == NO_ERROR)
+    {
+        err = (errno)exitCode;
     }
     return err;
 }
