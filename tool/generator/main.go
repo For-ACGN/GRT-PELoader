@@ -3,14 +3,65 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"debug/pe"
 	"encoding/binary"
 	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
 )
 
-var template []byte
+var (
+	tplDir  string
+	pePath  string
+	cmdLine string
+	wait    bool
+	outPath string
+)
+
+func init() {
+	flag.StringVar(&tplDir, "tpl", "templates", "set shellcode templates directory")
+	flag.StringVar(&pePath, "pe", "", "set input PE file path")
+	flag.StringVar(&cmdLine, "cmd", "", "set command line for exe")
+	flag.BoolVar(&wait, "wait", false, "wait for shellcode to exit")
+	flag.StringVar(&outPath, "o", "output.bin", "set output file path")
+	flag.Parse()
+}
 
 func main() {
+	fmt.Println("load PE Loader templates")
+	ldrX64, err := os.ReadFile(filepath.Join(tplDir, "PELoader_x64.bin"))
+	checkError(err)
+	ldrX86, err := os.ReadFile(filepath.Join(tplDir, "PELoader_x86.bin"))
+	checkError(err)
 
+	fmt.Println("parse PE image file")
+	peData, err := os.ReadFile(pePath)
+	checkError(err)
+	peFile, err := pe.NewFile(bytes.NewReader(peData))
+	checkError(err)
+
+	var template []byte
+	switch peFile.OptionalHeader.(type) {
+	case pe.OptionalHeader64:
+		template = ldrX64
+		fmt.Println("select template for x64")
+	case pe.OptionalHeader32:
+		template = ldrX86
+		fmt.Println("select template for x86")
+	default:
+		fmt.Println("unknown optional header type")
+		return
+	}
+
+}
+
+func checkError(err error) {
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
 
 // +---------+----------+-----------+----------+----------+
@@ -58,6 +109,24 @@ func EncodeArgStub(args [][]byte) ([]byte, error) {
 	return output, nil
 }
 
+func encryptArgStub(stub []byte) {
+	key := stub[:cryptoKeySize]
+	data := stub[offsetFirstArg:]
+	last := byte(0xFF)
+	var keyIdx = 0
+	for i := 0; i < len(data); i++ {
+		b := data[i] ^ last
+		b ^= key[keyIdx]
+		last = data[i]
+		data[i] = b
+		// update key index
+		keyIdx++
+		if keyIdx >= cryptoKeySize {
+			keyIdx = 0
+		}
+	}
+}
+
 // DecodeArgStub is used to decode and decrypt arguments from raw stub.
 func DecodeArgStub(stub []byte) ([][]byte, error) {
 	if len(stub) < offsetFirstArg {
@@ -78,24 +147,6 @@ func DecodeArgStub(stub []byte) ([][]byte, error) {
 		offset += 4 + int(l)
 	}
 	return args, nil
-}
-
-func encryptArgStub(stub []byte) {
-	key := stub[:cryptoKeySize]
-	data := stub[offsetFirstArg:]
-	last := byte(0xFF)
-	var keyIdx = 0
-	for i := 0; i < len(data); i++ {
-		b := data[i] ^ last
-		b ^= key[keyIdx]
-		last = data[i]
-		data[i] = b
-		// update key index
-		keyIdx++
-		if keyIdx >= cryptoKeySize {
-			keyIdx = 0
-		}
-	}
 }
 
 func decryptArgStub(stub []byte) {
