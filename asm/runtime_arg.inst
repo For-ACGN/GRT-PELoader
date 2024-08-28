@@ -1,0 +1,6 @@
+TestRuntimeArgStub proc
+  db 0BBh, 0DEh, 0F5h, 00Ah, 0E1h, 0CFh, 0B8h, 022h, 06Dh, 065h, 0CCh, 06Dh, 067h, 0FFh, 0F5h, 0EBh
+  db 02Ah, 095h, 0A2h, 0F3h, 025h, 09Ah, 055h, 0B7h, 03Eh, 051h, 0F8h, 005h, 03Ah, 0F5h, 076h, 00Eh
+  db 002h, 000h, 000h, 000h, 018h, 000h, 000h, 000h, 040h, 0DAh, 0F5h, 00Ah, 099h, 0E1h, 0DAh, 004h
+  db 073h, 069h, 0CCh, 06Dh, 006h, 0FFh, 0F5h, 0EBh, 029h, 095h, 0A2h, 0F3h, 024h, 09Ah, 055h, 0D4h
+TestRuntimeArgStub endp

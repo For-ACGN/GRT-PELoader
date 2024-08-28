@@ -10,4 +10,8 @@ ELSE
   INCLUDE <runtime_x64.inst>
 ENDIF
 
+IFNDEF RELEASE_MODE
+  INCLUDE <runtime_arg.inst>
+ENDIF
+
 end
