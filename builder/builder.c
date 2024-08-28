@@ -40,7 +40,20 @@ int saveShellcode()
     uintptr begin = (uintptr)(&Boot);
     uintptr end   = (uintptr)(&Epilogue);
     uintptr size  = end - begin;
-    size_t  n = fwrite((byte*)begin, (size_t)size, 1, file);
+    // skip 0xCC instructions at the tail
+    uint num0xCC = 0;
+    for (;;)
+    {
+        end--;
+        if (*(byte*)end != 0xCC)
+        {
+            break;
+        }
+        num0xCC++;
+    }
+    size -= num0xCC;
+    // write shellcode
+    size_t n = fwrite((byte*)begin, (size_t)size, 1, file);
     if (n != 1)
     {
         printf_s("failed to save shellcode");
