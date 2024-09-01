@@ -16,7 +16,7 @@ ENDIF
 
 IFNDEF RELEASE_MODE
   TestRuntimeArgStub proc
-  INCLUDE <runtime_arg.inst>
+  INCLUDE <runtime_args.inst>
   TestRuntimeArgStub endp
 ENDIF
 
