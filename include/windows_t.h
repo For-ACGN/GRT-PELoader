@@ -78,6 +78,16 @@ typedef HMODULE (*LoadLibraryW_t)
     LPCWSTR lpLibFileName
 );
 
+typedef HMODULE (*LoadLibraryExA_t)
+(
+    LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags
+);
+
+typedef HMODULE(*LoadLibraryExW_t)
+(
+    LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags
+);
+
 typedef BOOL (*FreeLibrary_t)
 (
     HMODULE hLibModule
