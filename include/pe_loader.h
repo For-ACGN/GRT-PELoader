@@ -32,6 +32,9 @@ typedef struct {
 
     // adjust current memory page protect for test
     bool AdjustProtect;
+
+    // not erase instructions after call functions about Init or Exit
+    bool NotEraseInstruction;
 } PELoader_Cfg;
 
 typedef struct {
