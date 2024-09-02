@@ -67,10 +67,14 @@ errno LDR_Destroy();
 #endif
 static PELoader* getPELoaderPointer();
 
-static void* allocLoaderMemPage(PELoader_Cfg* cfg);
+static bool ldr_lock();
+static bool ldr_unlock();
+
+static void* allocPELoaderMemPage(PELoader_Cfg* cfg);
 static bool  initPELoaderAPI(PELoader* loader);
 static bool  adjustPageProtect(PELoader* loader);
 static bool  updatePELoaderPointer(PELoader* loader);
+static bool  recoverPELoaderPointer(PELoader* loader);
 static errno initPELoaderEnvironment(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
@@ -78,6 +82,8 @@ static bool  mapSections(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
 static bool  processIAT(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
+
+static void  erasePELoaderMethods(PELoader* loader);
 static errno cleanPELoader(PELoader* loader);
 
 static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
@@ -103,7 +109,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
         return NULL;
     }
     // alloc memory for store loader structure
-    void* memPage = allocLoaderMemPage(cfg);
+    void* memPage = allocPELoaderMemPage(cfg);
     if (memPage == NULL)
     {
         SetLastErrno(ERR_LOADER_ALLOC_MEMORY);
@@ -150,6 +156,10 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
         }
         break;
     }
+    if (errno == NO_ERROR || errno > ERR_LOADER_ADJUST_PROTECT)
+    {
+        erasePELoaderMethods(loader);
+    }
     if (errno == NO_ERROR && !flushInstructionCache(loader))
     {
         errno = ERR_LOADER_FLUSH_INST;
@@ -174,7 +184,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     return module;
 }
 
-static void* allocLoaderMemPage(PELoader_Cfg* cfg)
+static void* allocPELoaderMemPage(PELoader_Cfg* cfg)
 {
 #ifdef _WIN64
     uint hash = 0xEFE2E03329515B77;
@@ -283,6 +293,10 @@ static bool adjustPageProtect(PELoader* loader)
     return loader->VirtualProtect((void*)begin, size, PAGE_EXECUTE_READWRITE, &old);
 }
 
+// CANNOT merge updatePELoaderPointer and recoverPELoaderPointer
+// to one function with two arguments, otherwise the compiler
+// will generate the incorrect instructions.
+
 static bool updatePELoaderPointer(PELoader* loader)
 {
     bool success = false;
@@ -296,6 +310,25 @@ static bool updatePELoaderPointer(PELoader* loader)
             continue;
         }
         *pointer = (uintptr)loader;
+        success = true;
+        break;
+    }
+    return success;
+}
+
+static bool recoverPELoaderPointer(PELoader* loader)
+{
+    bool success = false;
+    uintptr target = (uintptr)(GetFuncAddr(&getPELoaderPointer));
+    for (uintptr i = 0; i < 64; i++)
+    {
+        uintptr* pointer = (uintptr*)(target);
+        if (*pointer != (uintptr)loader)
+        {
+            target++;
+            continue;
+        }
+        *pointer = PE_LOADER_POINTER;
         success = true;
         break;
     }
@@ -541,6 +574,19 @@ static bool flushInstructionCache(PELoader* loader)
     uintptr end   = (uintptr)(GetFuncAddr(&ldr_epilogue));
     uint    size  = end - begin;
     return loader->FlushInstructionCache(CURRENT_PROCESS, (LPCVOID)begin, size);
+}
+
+__declspec(noinline)
+static void erasePELoaderMethods(PELoader* loader)
+{
+    if (loader->Config.NotEraseInstruction)
+    {
+        return;
+    }
+    uintptr begin = (uintptr)(GetFuncAddr(&allocPELoaderMemPage));
+    uintptr end   = (uintptr)(GetFuncAddr(&erasePELoaderMethods));
+    uintptr size  = end - begin;
+    RandBuf((byte*)begin, (int64)size);
 }
 
 static errno cleanPELoader(PELoader* loader)
