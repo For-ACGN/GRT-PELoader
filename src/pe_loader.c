@@ -732,6 +732,65 @@ static void* ldr_getMethods(byte* module, LPCSTR lpProcName)
     return NULL;
 }
 
+static errno ldr_init_mutex()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    // close old exit code mutex
+    if (loader->ExitCodeMu != NULL)
+    {
+        loader->CloseHandle(loader->ExitCodeMu);
+    }
+    // create new exit code mutex
+    HANDLE exitCodeMu = loader->CreateMutexA(NULL, false, NULL);
+    if (exitCodeMu == NULL)
+    {
+        return ERR_LOADER_CREATE_EC_MUTEX;
+    }
+    loader->ExitCodeMu = exitCodeMu;
+    return NO_ERROR;
+}
+
+static errno ldr_exit_process()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    // make callback about DLL_PROCESS_DETACH
+    if (loader->IsDLL)
+    {
+        DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
+        HMODULE hModule  = (HMODULE)(loader->PEImage);
+        DWORD   dwReason = DLL_PROCESS_DETACH;
+        uint exitCode;
+        if (dllMain(hModule, dwReason, NULL))
+        {
+            exitCode = 0;
+        } else {
+            exitCode = 1;
+        }
+        set_exit_code(exitCode);
+    }
+
+    // call ExitProcess for terminate all threads
+    errno errno = NO_ERROR;
+    for (;;)
+    {
+        // create a thread for call ExitProcess
+        void*  addr = GetFuncAddr(&hook_ExitProcess);
+        HANDLE hThread = loader->CreateThread(NULL, 0, addr, NULL, 0, NULL);
+        if (hThread == NULL)
+        {
+            errno = ERR_LOADER_CREATE_THREAD;
+            break;
+        }
+        // wait thread exit
+        loader->WaitForSingleObject(hThread, INFINITE);
+        loader->CloseHandle(hThread);
+        break;
+    }
+    return errno;
+}
+
 __declspec(noinline)
 static LPSTR hook_GetCommandLineA()
 {
@@ -874,6 +933,7 @@ uint LDR_Execute()
         // make callback about DLL_PROCESS_DETACH
         if (loader->IsDLL)
         {
+            // TODO merge them
             DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
             HMODULE hModule  = (HMODULE)(loader->PEImage);
             DWORD   dwReason = DLL_PROCESS_ATTACH;
@@ -958,66 +1018,15 @@ errno LDR_Destroy()
     {
         err = errcl;
     }
+
+    if (!loader->Config.NotEraseInstruction)
+    {
+        if (!recoverPELoaderPointer(loader) && err == NO_ERROR)
+        {
+            err = ERR_LOADER_RECOVER_INST;
+        }
+    }
     return err;
-}
-
-static errno ldr_init_mutex()
-{
-    PELoader* loader = getPELoaderPointer();
-
-    // close old exit code mutex
-    if (loader->ExitCodeMu != NULL)
-    {
-        loader->CloseHandle(loader->ExitCodeMu);
-    }
-    // create new exit code mutex
-    HANDLE exitCodeMu = loader->CreateMutexA(NULL, false, NULL);
-    if (exitCodeMu == NULL)
-    {
-        return ERR_LOADER_CREATE_EC_MUTEX;
-    }
-    loader->ExitCodeMu = exitCodeMu;
-    return NO_ERROR;
-}
-
-static errno ldr_exit_process()
-{
-    PELoader* loader = getPELoaderPointer();
-
-    // make callback about DLL_PROCESS_DETACH
-    if (loader->IsDLL)
-    {
-        DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
-        HMODULE hModule  = (HMODULE)(loader->PEImage);
-        DWORD   dwReason = DLL_PROCESS_DETACH;
-        uint exitCode;
-        if (dllMain(hModule, dwReason, NULL))
-        {
-            exitCode = 0;
-        } else {
-            exitCode = 1;
-        }
-        set_exit_code(exitCode);
-    }
-
-    // call ExitProcess for terminate all threads
-    errno errno = NO_ERROR;
-    for (;;)
-    {
-        // create a thread for call ExitProcess
-        void*  addr = GetFuncAddr(&hook_ExitProcess);
-        HANDLE hThread = loader->CreateThread(NULL, 0, addr, NULL, 0, NULL);
-        if (hThread == NULL)
-        {
-            errno = ERR_LOADER_CREATE_THREAD;
-            break;
-        }
-        // wait thread exit
-        loader->WaitForSingleObject(hThread, INFINITE);
-        loader->CloseHandle(hThread);
-        break;
-    }
-    return errno;
 }
 
 // prevent it be linked to other functions.
