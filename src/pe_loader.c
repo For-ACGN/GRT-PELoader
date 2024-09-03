@@ -93,6 +93,7 @@ static errno ldr_exit_process();
 static void  ldr_epilogue();
 
 static void pe_entry_point();
+static void pe_dll_main(DWORD dwReason);
 static void set_exit_code(uint code);
 static uint get_exit_code();
 
@@ -758,17 +759,7 @@ static errno ldr_exit_process()
     // make callback about DLL_PROCESS_DETACH
     if (loader->IsDLL)
     {
-        DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
-        HMODULE hModule  = (HMODULE)(loader->PEImage);
-        DWORD   dwReason = DLL_PROCESS_DETACH;
-        uint exitCode;
-        if (dllMain(hModule, dwReason, NULL))
-        {
-            exitCode = 0;
-        } else {
-            exitCode = 1;
-        }
-        set_exit_code(exitCode);
+        pe_dll_main(DLL_PROCESS_DETACH);
     }
 
     // call ExitProcess for terminate all threads
@@ -879,6 +870,24 @@ static void pe_entry_point()
     hook_ExitProcess(exitCode);
 }
 
+__declspec(noinline)
+static void pe_dll_main(DWORD dwReason)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
+    HMODULE   hModule = (HMODULE)(loader->PEImage);
+    // call dll main function
+    uint exitCode;
+    if (dllMain(hModule, dwReason, NULL))
+    {
+        exitCode = 0;
+    } else {
+        exitCode = 1;
+    }
+    set_exit_code(exitCode);
+}
+
 static void set_exit_code(uint code)
 {
     PELoader* loader = getPELoaderPointer();
@@ -933,19 +942,7 @@ uint LDR_Execute()
         // make callback about DLL_PROCESS_DETACH
         if (loader->IsDLL)
         {
-            // TODO merge them
-            DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
-            HMODULE hModule  = (HMODULE)(loader->PEImage);
-            DWORD   dwReason = DLL_PROCESS_ATTACH;
-            // call entry point
-            uint exitCode;
-            if (dllMain(hModule, dwReason, NULL))
-            {
-                exitCode = 0;
-            } else {
-                exitCode = 1;
-            }
-            set_exit_code(exitCode);
+            pe_dll_main(DLL_PROCESS_ATTACH);
             break;
         }
         // create thread at entry point
