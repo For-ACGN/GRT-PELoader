@@ -3,9 +3,11 @@
 #include "errno.h"
 #include "runtime.h"
 #include "pe_loader.h"
+#include "epilogue.h"
 #include "boot.h"
 
-static errno loadPELoaderConfig(Runtime_M* runtime, PELoader_Cfg* config);
+static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config);
+static void  eraseMemory(uintptr address, uintptr size);
 
 errno Boot()
 {
@@ -40,7 +42,7 @@ errno Boot()
     errno err = NO_ERROR;
     for (;;)
     {
-        err = loadPELoaderConfig(runtime, &config);
+        err = loadConfig(runtime, &config);
         if (err != NO_ERROR)
         {
             break;
@@ -82,10 +84,15 @@ errno Boot()
     {
         err = (errno)exitCode;
     }
+    // earse PE Loader and Runtime module
+    uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
+    uintptr end   = (uintptr)(GetFuncAddr(&Epilogue));
+    uintptr size  = end - begin;
+    eraseMemory(begin, size);
     return err;
 }
 
-static errno loadPELoaderConfig(Runtime_M* runtime, PELoader_Cfg* config)
+static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
 {
     uint32 size;
     // load PE Image, it cannot be empty
@@ -105,6 +112,10 @@ static errno loadPELoaderConfig(Runtime_M* runtime, PELoader_Cfg* config)
     if (size > 4096)
     {
         return ERR_COMMAND_LINE_TOO_LONG;
+    }
+    if (size == 0)
+    {
+        config->CommandLine = NULL;
     }
     // load STD_INPUT_HANDLE, it can be zero
     if (!runtime->GetArgument(ARG_IDX_STD_INPUT, &config->StdInput, &size))
@@ -146,3 +157,18 @@ static errno loadPELoaderConfig(Runtime_M* runtime, PELoader_Cfg* config)
     config->WaitMain = *WaitMain;
     return NO_ERROR;
 }
+
+// must disable compiler optimize, otherwise eraseMemory()
+// will be replaced to the mem_set() in lib_memory.c.
+#pragma optimize("", off)
+static void eraseMemory(uintptr address, uintptr size)
+{
+    byte* addr = (byte*)address;
+    for (uintptr i = 0; i < size; i++)
+    {
+        *addr += (byte)(address + i);
+        *addr |= (byte)(0xFFFFFFFF ^ address);
+        addr++;
+    }
+}
+#pragma optimize("", on)
