@@ -35,7 +35,8 @@ errno Boot()
         .StdError    = NULL,
         .WaitMain    = false,
 
-        .AdjustProtect = false,
+        .AdjustProtect       = false,
+        .NotEraseInstruction = false,
     };
     PELoader_M* loader;
 
@@ -84,7 +85,7 @@ errno Boot()
     {
         err = (errno)exitCode;
     }
-    // earse PE Loader and Runtime module
+    // erase PE Loader and Runtime module
     uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
     uintptr end   = (uintptr)(GetFuncAddr(&Epilogue));
     uintptr size  = end - begin;
@@ -118,7 +119,8 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
         config->CommandLine = NULL;
     }
     // load STD_INPUT_HANDLE, it can be zero
-    if (!runtime->GetArgument(ARG_IDX_STD_INPUT, &config->StdInput, &size))
+    HANDLE* StdInput = NULL;
+    if (!runtime->GetArgument(ARG_IDX_STD_INPUT, &StdInput, &size))
     {
         return ERR_NOT_FOUND_STD_INPUT;
     }
@@ -126,14 +128,23 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
     {
         return ERR_INVALID_STD_INPUT;
     }
+    if (*StdInput != NULL)
+    {
+        config->StdInput = *StdInput;
+    }
     // load STD_OUTPUT_HANDLE, it can be zero
-    if (!runtime->GetArgument(ARG_IDX_STD_OUTPUT, &config->StdOutput, &size))
+    HANDLE* StdOutput = NULL;
+    if (!runtime->GetArgument(ARG_IDX_STD_OUTPUT, &StdOutput, &size))
     {
         return ERR_NOT_FOUND_STD_OUTPUT;
     }
     if (size != sizeof(HANDLE))
     {
         return ERR_INVALID_STD_OUTPUT;
+    }
+    if (*StdOutput != NULL)
+    {
+        config->StdOutput = *StdOutput;
     }
     // load STD_ERROR_HANDLE, it can be zero
     if (!runtime->GetArgument(ARG_IDX_STD_ERROR, &config->StdError, &size))
@@ -167,7 +178,7 @@ static void eraseMemory(uintptr address, uintptr size)
     for (uintptr i = 0; i < size; i++)
     {
         *addr += (byte)(address + i);
-        *addr |= (byte)(0xFFFFFFFF ^ address);
+        *addr |= (byte)(address ^ 0xFF);
         addr++;
     }
 }
