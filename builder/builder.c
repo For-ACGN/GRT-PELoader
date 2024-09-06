@@ -1,31 +1,33 @@
 #include <stdio.h>
 #include "c_types.h"
+#include "hash_api.h"
 #include "errno.h"
 #include "runtime.h"
 #include "pe_loader.h"
 #include "boot.h"
 #include "epilogue.h"
 
-int saveShellcode();
-int testShellcode();
+// reference from Gleam-RT/include/errno.h 
+#define ERR_ARGUMENT_CHECKSUM (0x06000005)
+
+bool saveShellcode();
+bool testShellcode();
 
 int __cdecl main()
 {
-    int ret = saveShellcode();
-    if (ret != 0)
+    if (!saveShellcode())
     {
-        return ret;
+        return 1;
     }
-    ret = testShellcode();
-    if (ret != 0)
+    if (!testShellcode())
     {
-        return ret;
+        return 2;
     }
     printf_s("save shellcode successfully");
     return 0;
 }
 
-int saveShellcode()
+bool saveShellcode()
 {
 #ifdef _WIN64
     FILE* file = fopen("../dist/PELoader_x64.bin", "wb");
@@ -34,8 +36,8 @@ int saveShellcode()
 #endif
     if (file == NULL)
     {
-        printf_s("failed to create output file");
-        return 1;
+        printf_s("failed to create shellcode output file");
+        return false;
     }
     uintptr begin = (uintptr)(&Boot);
     uintptr end   = (uintptr)(&Epilogue);
@@ -57,21 +59,20 @@ int saveShellcode()
     if (n != 1)
     {
         printf_s("failed to save shellcode");
-        return 2;
+        return false;
     }
     fclose(file);
-    return 0;
+    return true;
 }
 
-int testShellcode()
+bool testShellcode()
 {
-    // TODO test
-    return 0;
-
+    // adjust memory protect to RWX
     errno errno = Boot();
-    if (errno != NO_ERROR)
+    if (errno != ERR_ARGUMENT_CHECKSUM)
     {
-        return errno;
+        printf_s("unexpected errno: 0x%lX\n", errno);
+        return false;
     }
-    return 0;
+    return true;
 }
