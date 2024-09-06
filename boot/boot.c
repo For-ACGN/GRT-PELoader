@@ -39,7 +39,6 @@ errno Boot()
         .NotEraseInstruction = false,
     };
     PELoader_M* loader;
-
     errno err = NO_ERROR;
     for (;;)
     {
@@ -97,7 +96,7 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
 {
     uint32 size;
     // load PE Image, it cannot be empty
-    if (!runtime->GetArgument(ARG_IDX_PE_IMAGE, &config->Image, &size))
+    if (!runtime->GetArgPointer(ARG_IDX_PE_IMAGE, &config->Image, &size))
     {
         return ERR_NOT_FOUND_PE_IMAGE;
     }
@@ -106,7 +105,7 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
         return ERR_EMPTY_PE_IMAGE_DATA;
     }
     // load command line, it can be empty
-    if (!runtime->GetArgument(ARG_IDX_COMMAND_LINE, &config->CommandLine, &size))
+    if (!runtime->GetArgPointer(ARG_IDX_COMMAND_LINE, &config->CommandLine, &size))
     {
         return ERR_NOT_FOUND_COMMAND_LINE;
     }
@@ -114,13 +113,8 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
     {
         return ERR_COMMAND_LINE_TOO_LONG;
     }
-    if (size == 0)
-    {
-        config->CommandLine = NULL;
-    }
     // load STD_INPUT_HANDLE, it can be zero
-    HANDLE* StdInput = NULL;
-    if (!runtime->GetArgument(ARG_IDX_STD_INPUT, &StdInput, &size))
+    if (!runtime->GetArgValue(ARG_IDX_STD_INPUT, &config->StdInput, &size))
     {
         return ERR_NOT_FOUND_STD_INPUT;
     }
@@ -128,13 +122,8 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
     {
         return ERR_INVALID_STD_INPUT;
     }
-    if (*StdInput != NULL)
-    {
-        config->StdInput = *StdInput;
-    }
     // load STD_OUTPUT_HANDLE, it can be zero
-    HANDLE* StdOutput = NULL;
-    if (!runtime->GetArgument(ARG_IDX_STD_OUTPUT, &StdOutput, &size))
+    if (!runtime->GetArgValue(ARG_IDX_STD_OUTPUT, &config->StdOutput, &size))
     {
         return ERR_NOT_FOUND_STD_OUTPUT;
     }
@@ -142,12 +131,8 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
     {
         return ERR_INVALID_STD_OUTPUT;
     }
-    if (*StdOutput != NULL)
-    {
-        config->StdOutput = *StdOutput;
-    }
     // load STD_ERROR_HANDLE, it can be zero
-    if (!runtime->GetArgument(ARG_IDX_STD_ERROR, &config->StdError, &size))
+    if (!runtime->GetArgValue(ARG_IDX_STD_ERROR, &config->StdError, &size))
     {
         return ERR_NOT_FOUND_STD_ERROR;
     }
@@ -156,8 +141,7 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
         return ERR_INVALID_STD_ERROR;
     }
     // load wait main, it must be true of false
-    bool* WaitMain = NULL;
-    if (!runtime->GetArgument(ARG_IDX_WAIT_MAIN, &WaitMain, &size))
+    if (!runtime->GetArgValue(ARG_IDX_WAIT_MAIN, &config->WaitMain, &size))
     {
         return ERR_NOT_FOUND_WAIT_MAIN;
     }
@@ -165,7 +149,6 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
     {
         return ERR_INVALID_WAIT_MAIN;
     }
-    config->WaitMain = *WaitMain;
     return NO_ERROR;
 }
 
