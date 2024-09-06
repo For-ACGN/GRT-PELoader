@@ -68,6 +68,31 @@ bool saveShellcode()
 bool testShellcode()
 {
     // adjust memory protect to RWX
+#ifdef _WIN64
+    uint hash = 0xEC01DE9C5D56A25C;
+    uint key  = 0xD2826BAB71DB502A;
+#elif _WIN32
+    uint hash = 0x579D4580;
+    uint key  = 0x86F8A823;
+#endif
+    VirtualProtect_t VirtualProtect = FindAPI(hash, key);
+    if (VirtualProtect == NULL)
+    {
+        printf_s("failed to find VirtualProtect\n");
+        return false;
+    }
+    uintptr begin = (uintptr)(&Boot);
+    uintptr end   = (uintptr)(&Epilogue);
+    uintptr size  = end - begin;
+    DWORD protect = PAGE_EXECUTE_READWRITE;
+    DWORD old;
+    BOOL ok = VirtualProtect((LPVOID)begin, (SIZE_T)size, protect, &old);
+    if (!ok)
+    {
+        printf_s("failed to call VirtualProtect\n");
+        return false;
+    }
+    // simple shellcode test
     errno errno = Boot();
     if (errno != ERR_ARGUMENT_CHECKSUM)
     {
