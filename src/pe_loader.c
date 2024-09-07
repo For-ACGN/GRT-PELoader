@@ -126,6 +126,11 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     // store config and context
     loader->Config = *cfg;
     loader->MainMemPage = memPage;
+    // set default FindAPI
+    if (loader->Config.FindAPI == NULL)
+    {
+        loader->Config.FindAPI = GetFuncAddr(&FindAPI);
+    }
     // initialize loader
     errno errno = NO_ERROR;
     for (;;)
@@ -373,7 +378,16 @@ static errno loadPEImage(PELoader* loader)
 static bool parsePEImage(PELoader* loader)
 {
     uintptr imageAddr = (uintptr)(loader->Config.Image);
-    uint32  peOffset  = *(uint32*)(imageAddr + 60);
+    // check PE file header
+    if (*(byte*)(imageAddr+0) != 'M')
+    {
+        return false;
+    }
+    if (*(byte*)(imageAddr+1) != 'Z')
+    {
+        return false;
+    }
+    uint32 peOffset = *(uint32*)(imageAddr + 60);
     // parse FileHeader
     uint16 numSections     = *(uint16*)(imageAddr + peOffset + 6);
     uint16 optHeaderSize   = *(uint16*)(imageAddr + peOffset + 20);
