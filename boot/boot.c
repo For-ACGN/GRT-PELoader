@@ -7,7 +7,7 @@
 #include "boot.h"
 
 static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config);
-static void  eraseMemory(uintptr address, uintptr size);
+static void  eraseModules();
 
 errno Boot()
 {
@@ -59,6 +59,7 @@ errno Boot()
     if (err != NO_ERROR || loader == NULL)
     {
         runtime->Exit();
+        eraseModules();
         return err;
     }
 
@@ -84,11 +85,7 @@ errno Boot()
     {
         err = (errno)exitCode;
     }
-    // erase PE Loader and Runtime module
-    uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
-    uintptr end   = (uintptr)(GetFuncAddr(&Epilogue));
-    uintptr size  = end - begin;
-    eraseMemory(begin, size);
+    eraseModules();
     return err;
 }
 
@@ -152,17 +149,29 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
     return NO_ERROR;
 }
 
-// must disable compiler optimize, otherwise eraseMemory()
-// will be replaced to the mem_set() in lib_memory.c.
-#pragma optimize("", off)
-static void eraseMemory(uintptr address, uintptr size)
+__declspec(noinline)
+static void eraseModules()
 {
+    uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
+    uintptr end   = (uintptr)(GetFuncAddr(&Epilogue));
+    uintptr size  = end - begin;
+    uintptr address = begin;
+
     byte* addr = (byte*)address;
     for (uintptr i = 0; i < size; i++)
     {
-        *addr += (byte)(address + i);
-        *addr |= (byte)(address ^ 0xFF);
+        byte b = *addr;
+        if (i > 0)
+        {
+            byte prev = *(byte*)(address + i - 1);
+            b -= prev;
+            b ^= prev;
+            b += prev;
+            b |= prev;
+        }
+        b += (byte)(address + i);
+        b |= (byte)(address ^ 0xFF);
+        *addr = b;
         addr++;
     }
 }
-#pragma optimize("", on)
