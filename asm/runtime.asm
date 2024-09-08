@@ -14,10 +14,4 @@ ELSE
   InitRuntime endp
 ENDIF
 
-IFNDEF RELEASE_MODE
-  TestRuntimeArgStub proc
-  INCLUDE <runtime_args.inst>
-  TestRuntimeArgStub endp
-ENDIF
-
 end
