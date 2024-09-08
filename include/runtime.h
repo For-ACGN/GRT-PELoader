@@ -128,4 +128,10 @@ typedef struct {
 // If failed to initialize, use GetLastError to get error code.
 extern Runtime_M* InitRuntime(Runtime_Opts* opts);
 
+// reserve stub for store arguments
+#pragma warning(push)
+#pragma warning(disable: 4276)
+extern void Argument_Stub();
+#pragma warning(pop)
+
 #endif // RUNTIME_H
