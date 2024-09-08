@@ -1,8 +1,8 @@
 @echo off
 
-echo ============================================================
-echo Build HashAPI tool from https://github.com/For-ACGN/hash_api
-echo ============================================================
+echo ==================================================================
+echo Build HashAPI tool from https://github.com/RSSU-Shellcode/hash_api
+echo ==================================================================
 echo.
 
 echo ------------------------x64------------------------
@@ -21,8 +21,10 @@ hash_api -fmt 64 -conc -func GetCommandLineA
 hash_api -fmt 64 -conc -func GetCommandLineW
 hash_api -fmt 64 -conc -func GetStdHandle
 hash_api -fmt 64 -conc -func ExitProcess
-hash_api -fmt 64 -conc -func RT_GetArgument
+hash_api -fmt 64 -conc -func RT_GetArgValue
+hash_api -fmt 64 -conc -func RT_GetArgPointer
 hash_api -fmt 64 -conc -func RT_EraseArgument
+hash_api -fmt 64 -conc -func RT_EraseAllArgs
 echo.
 
 echo ------------------------x86------------------------
@@ -41,8 +43,10 @@ hash_api -fmt 32 -conc -func GetCommandLineA
 hash_api -fmt 32 -conc -func GetCommandLineW
 hash_api -fmt 32 -conc -func GetStdHandle
 hash_api -fmt 32 -conc -func ExitProcess
-hash_api -fmt 32 -conc -func RT_GetArgument
+hash_api -fmt 32 -conc -func RT_GetArgValue
+hash_api -fmt 32 -conc -func RT_GetArgPointer
 hash_api -fmt 32 -conc -func RT_EraseArgument
+hash_api -fmt 32 -conc -func RT_EraseAllArgs
 echo.
 
 pause
