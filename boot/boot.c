@@ -15,7 +15,7 @@ errno Boot()
     Runtime_Opts opts = {
         .BootInstAddress     = GetFuncAddr(&Boot),
         .NotEraseInstruction = false,
-        .NotAdjustProtect    = true,
+        .NotAdjustProtect    = false,
         .TrackCurrentThread  = false,
     };
     Runtime_M* runtime = InitRuntime(&opts);
