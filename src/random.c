@@ -2,9 +2,6 @@
 #include "rel_addr.h"
 #include "random.h"
 
-// [reference]
-// https://en.wikipedia.org/wiki/Xorshift
-
 static uint64  rand(uint64 seed, uint64 mod);
 static uint64  ror(uint64 value, uint8 bits);
 static uintptr getStackAddr();
@@ -13,8 +10,19 @@ static uintptr getStackAddr();
 
 void RandBuf(byte* buf, int64 size)
 {
-    uint64 seed = RandUint64((uint64)(buf));
-    for (int64 i = 0; i < size; i++)
+    if (size < 1)
+    {
+        return;
+    }
+    // limit the max loop times
+    int64 times = size; 
+    if (times > 16)
+    {
+        times = 16;
+    }
+    // generate seed from buffer address
+    uint64 seed = (uint64)(buf);
+    for (int64 i = 0; i < times; i++)
     {
         byte b = *(buf + i);
         if (b == 0)
@@ -26,9 +34,12 @@ void RandBuf(byte* buf, int64 size)
     }
     for (int64 i = 0; i < size; i++)
     {
-        seed = RandUint64(seed);
+        // xor shift 64
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        // write generate byte
         *(buf + i) = (byte)seed;
-        seed += seed % 256;
     }
 }
 
@@ -104,7 +115,6 @@ static uint64 rand(uint64 seed, uint64 mod)
         seed += ror(seed, 1);        
         seed += ror(seed, 17);
         seed = (a * seed + c);
-
         // xor shift 64
         seed ^= seed << 13;
         seed ^= seed >> 7;
@@ -126,5 +136,35 @@ static uintptr getStackAddr()
     return (uintptr)(&stack);
 }
 #pragma warning(pop)
+
+uint XORShift(uint seed)
+{
+#ifdef _WIN64
+    seed ^= seed << 13;
+    seed ^= seed >> 7;
+    seed ^= seed << 17;
+#elif _WIN32
+    seed ^= seed << 13;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;
+#endif
+    return seed;
+}
+
+uint32 XORShift32(uint32 seed)
+{
+    seed ^= seed << 13;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;
+    return seed;
+}
+
+uint64 XORShift64(uint64 seed)
+{
+    seed ^= seed << 13;
+    seed ^= seed >> 7;
+    seed ^= seed << 17;
+    return seed;
+}
 
 #pragma optimize("t", off)
