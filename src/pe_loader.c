@@ -1024,11 +1024,6 @@ errno LDR_Destroy()
     {
         err = errep;
     }
-    errno errcl = cleanPELoader(loader);
-    if (errcl != NO_ERROR && err == NO_ERROR)
-    {
-        err = errcl;
-    }
 
     if (!loader->Config.NotEraseInstruction)
     {
@@ -1036,6 +1031,12 @@ errno LDR_Destroy()
         {
             err = ERR_LOADER_RECOVER_INST;
         }
+    }
+
+    errno errcl = cleanPELoader(loader);
+    if (errcl != NO_ERROR && err == NO_ERROR)
+    {
+        err = errcl;
     }
     return err;
 }
