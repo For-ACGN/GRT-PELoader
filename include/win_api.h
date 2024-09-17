@@ -4,6 +4,6 @@
 #include "c_types.h"
 #include "windows_t.h"
 
-uint32 GetModuleFileName(HMODULE hModule, byte* name, uint32 size);
+uint16 GetModuleFileName(HMODULE hModule, byte* name, uint16 maxSize);
 
 #endif // WIN_API_H
