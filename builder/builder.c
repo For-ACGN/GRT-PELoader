@@ -7,9 +7,6 @@
 #include "boot.h"
 #include "epilogue.h"
 
-// reference from Gleam-RT/include/errno.h 
-#define ERR_ARGUMENT_CHECKSUM (0x06000005)
-
 bool saveShellcode();
 bool testShellcode();
 
@@ -40,20 +37,24 @@ bool saveShellcode()
         return false;
     }
     uintptr begin = (uintptr)(&Boot);
-    uintptr end   = (uintptr)(&Epilogue);
+    uintptr end   = (uintptr)(&Argument_Stub);
     uintptr size  = end - begin;
-    // skip 0xCC instructions at the tail
-    uint num0xCC = 0;
-    for (;;)
+    // conut 0xFF for check the shellcode tail is valid
+    uint num0xFF = 0;
+    for (int i = 0; i < 16; i++)
     {
         end--;
-        if (*(byte*)end != 0xCC)
+        if (*(byte*)end != 0xFF)
         {
             break;
         }
-        num0xCC++;
+        num0xFF++;
     }
-    size -= num0xCC;
+    if (num0xFF != 16)
+    {
+        printf_s("invalid shellcode tail");
+        return false;
+    }
     // write shellcode
     size_t n = fwrite((byte*)begin, (size_t)size, 1, file);
     if (n != 1)
@@ -86,17 +87,16 @@ bool testShellcode()
     uintptr size  = end - begin;
     DWORD protect = PAGE_EXECUTE_READWRITE;
     DWORD old;
-    BOOL ok = VirtualProtect((LPVOID)begin, (SIZE_T)size, protect, &old);
-    if (!ok)
+    if (!VirtualProtect((LPVOID)begin, (SIZE_T)size, protect, &old))
     {
         printf_s("failed to call VirtualProtect\n");
         return false;
     }
     // simple shellcode test
     errno errno = Boot();
-    if (errno != ERR_ARGUMENT_CHECKSUM)
+    if (errno != ERR_LOADER_PARSE_PE_IMAGE)
     {
-        printf_s("unexpected errno: 0x%lX\n", errno);
+        printf_s("unexpected errno: 0x%X\n", errno);
         return false;
     }
     return true;
