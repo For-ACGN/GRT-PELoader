@@ -7,7 +7,6 @@
 #include "boot.h"
 
 static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config);
-static void  eraseModules();
 
 errno Boot()
 {
@@ -38,7 +37,7 @@ errno Boot()
         .AdjustProtect       = false,
         .NotEraseInstruction = false,
     };
-    PELoader_M* loader;
+    PELoader_M* loader = NULL;
     errno err = NO_ERROR;
     for (;;)
     {
@@ -59,7 +58,6 @@ errno Boot()
     if (err != NO_ERROR || loader == NULL)
     {
         runtime->Exit();
-        eraseModules();
         return err;
     }
 
@@ -85,7 +83,6 @@ errno Boot()
     {
         err = (errno)exitCode;
     }
-    eraseModules();
     return err;
 }
 
@@ -147,31 +144,4 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
         return ERR_INVALID_WAIT_MAIN;
     }
     return NO_ERROR;
-}
-
-__declspec(noinline)
-static void eraseModules()
-{
-    uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
-    uintptr end   = (uintptr)(GetFuncAddr(&Epilogue));
-    uintptr size  = end - begin;
-    uintptr address = begin;
-
-    byte* addr = (byte*)address;
-    for (uintptr i = 0; i < size; i++)
-    {
-        byte b = *addr;
-        if (i > 0)
-        {
-            byte prev = *(byte*)(address + i - 1);
-            b -= prev;
-            b ^= prev;
-            b += prev;
-            b |= prev;
-        }
-        b += (byte)(address + i);
-        b |= (byte)(address ^ 0xFF);
-        *addr = b;
-        addr++;
-    }
 }
