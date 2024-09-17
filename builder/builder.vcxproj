@@ -54,7 +54,6 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </MASM>
     <MASM Include="..\asm\runtime.asm" />
-    <MASM Include="..\asm\args_stub.asm" />
     <MASM Include="..\asm\epilogue.asm" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
