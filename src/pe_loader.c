@@ -72,7 +72,8 @@ static bool ldr_unlock();
 
 static void* allocPELoaderMemPage(PELoader_Cfg* cfg);
 static bool  initPELoaderAPI(PELoader* loader);
-static bool  adjustPageProtect(PELoader* loader);
+static bool  adjustPageProtect(PELoader* loader, DWORD* old);
+static bool  recoverPageProtect(PELoader* loader, DWORD protect);
 static bool  updatePELoaderPointer(PELoader* loader);
 static bool  recoverPELoaderPointer(PELoader* loader);
 static errno initPELoaderEnvironment(PELoader* loader);
@@ -132,6 +133,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
         loader->Config.FindAPI = GetFuncAddr(&FindAPI);
     }
     // initialize loader
+    DWORD oldProtect = 0;
     errno errno = NO_ERROR;
     for (;;)
     {
@@ -140,7 +142,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
             errno = ERR_LOADER_INIT_API;
             break;
         }
-        if (!adjustPageProtect(loader))
+        if (!adjustPageProtect(loader, &oldProtect))
         {
             errno = ERR_LOADER_ADJUST_PROTECT;
             break;
@@ -165,6 +167,13 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     if (errno == NO_ERROR || errno > ERR_LOADER_ADJUST_PROTECT)
     {
         erasePELoaderMethods(loader);
+    }
+    if (oldProtect != 0)
+    {
+        if (!recoverPageProtect(loader, oldProtect) && errno == NO_ERROR)
+        {
+            errno = ERR_LOADER_RECOVER_PROTECT;
+        }
     }
     if (errno == NO_ERROR && !flushInstructionCache(loader))
     {
@@ -284,22 +293,6 @@ static bool initPELoaderAPI(PELoader* loader)
     loader->ExitProcess           = list[0x0E].proc;
     return true;
 }
-
-// change memory protect for dynamic update pointer that hard encode.
-static bool adjustPageProtect(PELoader* loader)
-{
-    if (!loader->Config.AdjustProtect)
-    {
-        return true;
-    }
-    uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
-    uintptr end   = (uintptr)(GetFuncAddr(&ldr_epilogue));
-    uint    size  = end - begin;
-    uint32  old;
-    return loader->VirtualProtect((void*)begin, size, PAGE_EXECUTE_READWRITE, &old);
-}
-
-// TODO recover protect
 
 // CANNOT merge updatePELoaderPointer and recoverPELoaderPointer
 // to one function with two arguments, otherwise the compiler
@@ -604,6 +597,34 @@ static void erasePELoaderMethods(PELoader* loader)
     uintptr end   = (uintptr)(GetFuncAddr(&erasePELoaderMethods));
     uintptr size  = end - begin;
     RandBuf((byte*)begin, (int64)size);
+}
+
+// ======================== these instructions will not be erased ========================
+
+// change memory protect for dynamic update pointer that hard encode.
+static bool adjustPageProtect(PELoader* loader, DWORD* old)
+{
+    if (loader->Config.NotAdjustProtect)
+    {
+        return true;
+    }
+    uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
+    uintptr end   = (uintptr)(GetFuncAddr(&ldr_epilogue));
+    uint    size  = end - begin;
+    return loader->VirtualProtect((void*)begin, size, PAGE_EXECUTE_READWRITE, old);
+}
+
+static bool recoverPageProtect(PELoader* loader, DWORD protect)
+{
+    if (loader->Config.NotAdjustProtect)
+    {
+        return true;
+    }
+    uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
+    uintptr end   = (uintptr)(GetFuncAddr(&ldr_epilogue));
+    uint    size  = end - begin;
+    DWORD   old;
+    return loader->VirtualProtect((void*)begin, size, protect, &old);
 }
 
 static errno cleanPELoader(PELoader* loader)
@@ -1025,9 +1046,20 @@ errno LDR_Destroy()
 
     if (!loader->Config.NotEraseInstruction)
     {
+        DWORD oldProtect;
+        if (!adjustPageProtect(loader, &oldProtect) && err == NO_ERROR)
+        {
+            err = ERR_LOADER_ADJUST_PROTECT;
+        }
+
         if (!recoverPELoaderPointer(loader) && err == NO_ERROR)
         {
             err = ERR_LOADER_RECOVER_INST;
+        }
+
+        if (!recoverPageProtect(loader, oldProtect) && err == NO_ERROR)
+        {
+            err = ERR_LOADER_RECOVER_PROTECT;
         }
     }
 
@@ -1043,7 +1075,7 @@ errno LDR_Destroy()
 #pragma optimize("", off)
 
 #pragma warning(push)
-#pragma warning(disable : 4189)
+#pragma warning(disable: 4189)
 static void ldr_epilogue()
 {
     byte var = 10;
