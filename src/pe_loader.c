@@ -299,6 +299,8 @@ static bool adjustPageProtect(PELoader* loader)
     return loader->VirtualProtect((void*)begin, size, PAGE_EXECUTE_READWRITE, &old);
 }
 
+// TODO recover protect
+
 // CANNOT merge updatePELoaderPointer and recoverPELoaderPointer
 // to one function with two arguments, otherwise the compiler
 // will generate the incorrect instructions.
@@ -477,9 +479,9 @@ static bool fixRelocTable(PELoader* loader)
         uintptr dstAddr = peImage + baseReloc->VirtualAddress;
         for (uint32 i = 0; i < (baseReloc->SizeOfBlock - 8) / 2; i++)
         {
-            uint16 info   = *(uint16*)(infoPtr);
-            uint16 type   = info >> 12;
-            uint16 offset = info & 0xFFF;
+            uint16 info = *(uint16*)(infoPtr);
+            uint16 type = info >> 12;
+            uint16 off  = info & 0xFFF;
 
             uint32* patchAddr32;
             uint64* patchAddr64;
@@ -488,11 +490,11 @@ static bool fixRelocTable(PELoader* loader)
             case IMAGE_REL_BASED_ABSOLUTE:
                 break;
             case IMAGE_REL_BASED_HIGHLOW:
-                patchAddr32 = (uint32*)(dstAddr + offset);
+                patchAddr32 = (uint32*)(dstAddr + off);
                 *patchAddr32 += (uint32)(addressOffset);
                 break;
             case IMAGE_REL_BASED_DIR64:
-                patchAddr64 = (uint64*)(dstAddr + offset);
+                patchAddr64 = (uint64*)(dstAddr + off);
                 *patchAddr64 += (uint64)(addressOffset);
                 break;
             default:
@@ -714,8 +716,6 @@ void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 
 static void* ldr_getMethods(byte* module, LPCSTR lpProcName)
 {
-    PELoader* loader = getPELoaderPointer();
-
     typedef struct {
         uint hash; uint key; void* method;
     } method;
@@ -991,8 +991,6 @@ uint LDR_Execute()
 __declspec(noinline)
 errno LDR_Exit()
 {
-    PELoader* loader = getPELoaderPointer();
-
     if (!ldr_lock())
     {
         return ERR_LOADER_LOCK;
@@ -1043,9 +1041,14 @@ errno LDR_Destroy()
 
 // prevent it be linked to other functions.
 #pragma optimize("", off)
+
+#pragma warning(push)
+#pragma warning(disable : 4189)
 static void ldr_epilogue()
 {
     byte var = 10;
     return;
 }
+#pragma warning(pop)
+
 #pragma optimize("", on)
