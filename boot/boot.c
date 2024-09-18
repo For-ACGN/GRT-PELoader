@@ -6,18 +6,24 @@
 #include "epilogue.h"
 #include "boot.h"
 
+static errno loadOption(Runtime_Opts* options);
 static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config);
 
 errno Boot()
 {
     // initialize Gleam-RT for PE Loader
-    Runtime_Opts opts = {
+    Runtime_Opts options = {
         .BootInstAddress     = GetFuncAddr(&Boot),
         .NotEraseInstruction = false,
         .NotAdjustProtect    = false,
         .TrackCurrentThread  = false,
     };
-    Runtime_M* runtime = InitRuntime(&opts);
+    errno elo = loadOption(&options);
+    if (elo != NO_ERROR)
+    {
+        return elo;
+    }
+    Runtime_M* runtime = InitRuntime(&options);
     if (runtime == NULL)
     {
         return GetLastErrno();
@@ -34,8 +40,8 @@ errno Boot()
         .StdError    = NULL,
         .WaitMain    = false,
 
-        .AdjustProtect       = false,
-        .NotEraseInstruction = false,
+        .NotEraseInstruction = options.NotEraseInstruction,
+        .NotAdjustProtect    = options.NotAdjustProtect,
     };
     PELoader_M* loader = NULL;
     errno err = NO_ERROR;
@@ -84,6 +90,22 @@ errno Boot()
         err = (errno)exitCode;
     }
     return err;
+}
+
+static errno loadOption(Runtime_Opts* options)
+{
+    uintptr stub = (uintptr)(GetFuncAddr(&Argument_Stub));
+    stub -= OPTION_STUB_SIZE;
+    // check is valid runtime option stub
+    if (*(byte*)stub != 0xFC)
+    {
+        return ERR_INVALID_OPTION_STUB;
+    }
+    // load runtime options from stub
+    options->NotEraseInstruction = *(bool*)(stub+OPT_OFFSET_NOT_ERASE_INSTRUCTION);
+    options->NotAdjustProtect    = *(bool*)(stub+OPT_OFFSET_NOT_ADJUST_PROTECT);
+    options->TrackCurrentThread  = *(bool*)(stub+OPT_OFFSET_NOT_TRACK_CURRENT_THREAD);
+    return NO_ERROR;
 }
 
 static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
