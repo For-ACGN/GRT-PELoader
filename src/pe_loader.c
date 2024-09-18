@@ -20,6 +20,8 @@ typedef struct {
     VirtualAlloc_t          VirtualAlloc;
     VirtualFree_t           VirtualFree;
     VirtualProtect_t        VirtualProtect;
+    VirtualLock_t           VirtualLock;
+    VirtualUnlock_t         VirtualUnlock;
     LoadLibraryA_t          LoadLibraryA;
     GetProcAddress_t        GetProcAddress;
     CreateThread_t          CreateThread;
@@ -35,6 +37,7 @@ typedef struct {
 
     // loader context
     void*  MainMemPage; // store all structures
+    void*  PEBackup;    // PE image backup
     HANDLE hMutex;      // global mutex
     HANDLE ExitCodeMu;  // lock exit code
 
@@ -82,6 +85,7 @@ static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
 static bool  processIAT(PELoader* loader);
+static errno backupPEImage(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
 
 static void  erasePELoaderMethods(PELoader* loader);
@@ -158,6 +162,11 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
             break;
         }
         errno = loadPEImage(loader);
+        if (errno != NO_ERROR)
+        {
+            break;
+        }
+        errno = backupPEImage(loader);
         if (errno != NO_ERROR)
         {
             break;
@@ -417,10 +426,18 @@ static bool parsePEImage(PELoader* loader)
 
 static bool mapSections(PELoader* loader)
 {
-    // allocate memory for write PE image
+    // append random memory size to image tail
+    uint64 seed = (uint64)(GetFuncAddr(&InitPELoader));
     uint32 size = loader->ImageSize;
+    size += (uint32)(RandIntN(seed, 128) * 4096);
+    // allocate memory for write PE image
     void* mem = loader->VirtualAlloc(0, size, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (mem == NULL)
+    {
+        return false;
+    }
+    // lock memory region with special argument for reuse PE image
+    if (!loader->VirtualLock(mem, 0))
     {
         return false;
     }
@@ -578,6 +595,14 @@ static bool processIAT(PELoader* loader)
     return true;
 }
 
+// backupPEImage is used to execute PE image multi times.
+static errno backupPEImage(PELoader* loader)
+{
+
+
+    return NO_ERROR;
+}
+
 static bool flushInstructionCache(PELoader* loader)
 {
     uintptr begin = (uintptr)(GetFuncAddr(&InitPELoader));
@@ -631,8 +656,9 @@ static errno cleanPELoader(PELoader* loader)
 {
     errno errno = NO_ERROR;
 
-    CloseHandle_t closeHandle = loader->CloseHandle;
-    VirtualFree_t virtualFree = loader->VirtualFree;
+    CloseHandle_t   closeHandle   = loader->CloseHandle;
+    VirtualUnlock_t virtualUnlock = loader->VirtualUnlock;
+    VirtualFree_t   virtualFree   = loader->VirtualFree;
 
     if (closeHandle != NULL)
     {
@@ -654,10 +680,25 @@ static errno cleanPELoader(PELoader* loader)
         }
     }
 
+    void* peImage = (void*)(loader->PEImage);
+
+
+
+    if (virtualUnlock != NULL)
+    {
+        // unlock memory page for release
+        if (peImage != NULL)
+        {
+            if (!loader->VirtualUnlock(peImage, 0) && errno == NO_ERROR)
+            {
+                errno = ERR_LOADER_UNLOCK_PE_IMAGE;
+            }
+        }
+    }
+
     if (virtualFree != NULL)
     {
         // release memory page for PE image
-        void* peImage = (void*)(loader->PEImage);
         if (peImage != NULL)
         {
             RandBuf(peImage, loader->ImageSize);
