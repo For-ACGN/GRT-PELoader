@@ -20,25 +20,24 @@ int __cdecl main()
     {
         return 2;
     }
-    printf_s("save shellcode successfully");
+    printf_s("save shellcode successfully\n");
     return 0;
 }
 
 bool saveShellcode()
 {
-#ifdef _WIN64
-    FILE* file = fopen("../dist/PELoader_x64.bin", "wb");
-#elif _WIN32
-    FILE* file = fopen("../dist/PELoader_x86.bin", "wb");
-#endif
-    if (file == NULL)
-    {
-        printf_s("failed to create shellcode output file");
-        return false;
-    }
     uintptr begin = (uintptr)(&Boot);
     uintptr end   = (uintptr)(&Argument_Stub);
     uintptr size  = end - begin;
+
+    // check option stub is valid
+    end -= OPTION_STUB_SIZE;
+    if (*(byte*)end != 0xFC)
+    {
+        printf_s("invalid runtime option stub\n");
+        return false;
+    }
+
     // conut 0xFF for check the shellcode tail is valid
     uint num0xFF = 0;
     for (int i = 0; i < 16; i++)
@@ -52,14 +51,25 @@ bool saveShellcode()
     }
     if (num0xFF != 16)
     {
-        printf_s("invalid shellcode tail");
+        printf_s("invalid shellcode tail\n");
         return false;
     }
+
     // write shellcode
+#ifdef _WIN64
+    FILE* file = fopen("../dist/PELoader_x64.bin", "wb");
+#elif _WIN32
+    FILE* file = fopen("../dist/PELoader_x86.bin", "wb");
+#endif
+    if (file == NULL)
+    {
+        printf_s("failed to create shellcode output file\n");
+        return false;
+    }
     size_t n = fwrite((byte*)begin, (size_t)size, 1, file);
     if (n != 1)
     {
-        printf_s("failed to save shellcode");
+        printf_s("failed to save shellcode\n");
         return false;
     }
     fclose(file);
@@ -68,35 +78,10 @@ bool saveShellcode()
 
 bool testShellcode()
 {
-    // adjust memory protect to RWX
-#ifdef _WIN64
-    uint hash = 0xEC01DE9C5D56A25C;
-    uint key  = 0xD2826BAB71DB502A;
-#elif _WIN32
-    uint hash = 0x579D4580;
-    uint key  = 0x86F8A823;
-#endif
-    VirtualProtect_t VirtualProtect = FindAPI(hash, key);
-    if (VirtualProtect == NULL)
-    {
-        printf_s("failed to find VirtualProtect\n");
-        return false;
-    }
-    uintptr begin = (uintptr)(&Boot);
-    uintptr end   = (uintptr)(&Epilogue);
-    uintptr size  = end - begin;
-    DWORD protect = PAGE_EXECUTE_READWRITE;
-    DWORD old;
-    if (!VirtualProtect((LPVOID)begin, (SIZE_T)size, protect, &old))
-    {
-        printf_s("failed to call VirtualProtect\n");
-        return false;
-    }
-    // simple shellcode test
     errno errno = Boot();
     if (errno != ERR_LOADER_PARSE_PE_IMAGE)
     {
-        printf_s("unexpected errno: 0x%X\n", errno);
+        printf_s("unexpected boot errno: 0x%X\n", errno);
         return false;
     }
     return true;
