@@ -39,7 +39,8 @@ typedef struct {
     void*  MainMemPage; // store all structures
     void*  PEBackup;    // PE image backup
     HANDLE hMutex;      // global mutex
-    HANDLE ExitCodeMu;  // lock exit code
+    HANDLE ExitCodeMu;  // lock exit code // TODO status
+    bool   IsRunning;   // execute flag
 
     // store PE image information
     uintptr PEImage;
@@ -85,7 +86,7 @@ static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
 static bool  processIAT(PELoader* loader);
-static errno backupPEImage(PELoader* loader);
+static bool  backupPEImage(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
 
 static void  erasePELoaderMethods(PELoader* loader);
@@ -166,9 +167,9 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
         {
             break;
         }
-        errno = backupPEImage(loader);
-        if (errno != NO_ERROR)
+        if (!backupPEImage(loader))
         {
+            errno = ERR_LOADER_BACKUP_PE_IMAGE;
             break;
         }
         break;
@@ -243,6 +244,8 @@ static bool initPELoaderAPI(PELoader* loader)
         { 0x21E5E7E61968BBF4, 0x38FC2BB8B9E8F0B1 }, // VirtualAlloc
         { 0x7DDAB5BF4E742736, 0x6E0D1E4F5D19BE67 }, // VirtualFree
         { 0x6CF439115B558DE1, 0x7CAC9554D5A67E28 }, // VirtualProtect
+        { 0xFAC73FAE41C0C2C8, 0xE7A0EE8E5CBAB70B }, // VirtualLock
+        { 0x17C8D1591CA0850F, 0x64458856130C1CE7 }, // VirtualUnlock
         { 0x90BD05BA72DD948C, 0x253672CEAE439BB6 }, // LoadLibraryA
         { 0xF4E6DE881A59F6A0, 0xBC2E958CCBE70AA2 }, // GetProcAddress
         { 0x62E83480AE0AAFC7, 0x86C0AECD3EF92256 }, // CreateThread
@@ -261,6 +264,8 @@ static bool initPELoaderAPI(PELoader* loader)
         { 0x28310500, 0x51C40B22 }, // VirtualAlloc
         { 0xBC28097D, 0x4483038A }, // VirtualFree
         { 0x7B578622, 0x6950410A }, // VirtualProtect
+        { 0x54914D83, 0xA9606A64 }, // VirtualLock
+        { 0xCEDF8C40, 0x6D73766F }, // VirtualUnlock
         { 0x3DAF1E96, 0xD7E436F3 }, // LoadLibraryA
         { 0xE971801A, 0xEC6F6D90 }, // GetProcAddress
         { 0xD1AFE117, 0xDA772D98 }, // CreateThread
@@ -288,18 +293,20 @@ static bool initPELoaderAPI(PELoader* loader)
     loader->VirtualAlloc          = list[0x00].proc;
     loader->VirtualFree           = list[0x01].proc;
     loader->VirtualProtect        = list[0x02].proc;
-    loader->LoadLibraryA          = list[0x03].proc;
-    loader->GetProcAddress        = list[0x04].proc;
-    loader->CreateThread          = list[0x05].proc;
-    loader->FlushInstructionCache = list[0x06].proc;
-    loader->CreateMutexA          = list[0x07].proc;
-    loader->ReleaseMutex          = list[0x08].proc;
-    loader->WaitForSingleObject   = list[0x09].proc;
-    loader->CloseHandle           = list[0x0A].proc;
-    loader->GetCommandLineA       = list[0x0B].proc;
-    loader->GetCommandLineW       = list[0x0C].proc;
-    loader->GetStdHandle          = list[0x0D].proc;
-    loader->ExitProcess           = list[0x0E].proc;
+    loader->VirtualLock           = list[0x03].proc;
+    loader->VirtualUnlock         = list[0x04].proc;
+    loader->LoadLibraryA          = list[0x05].proc;
+    loader->GetProcAddress        = list[0x06].proc;
+    loader->CreateThread          = list[0x07].proc;
+    loader->FlushInstructionCache = list[0x08].proc;
+    loader->CreateMutexA          = list[0x09].proc;
+    loader->ReleaseMutex          = list[0x0A].proc;
+    loader->WaitForSingleObject   = list[0x0B].proc;
+    loader->CloseHandle           = list[0x0C].proc;
+    loader->GetCommandLineA       = list[0x0D].proc;
+    loader->GetCommandLineW       = list[0x0E].proc;
+    loader->GetStdHandle          = list[0x0F].proc;
+    loader->ExitProcess           = list[0x10].proc;
     return true;
 }
 
@@ -429,7 +436,7 @@ static bool mapSections(PELoader* loader)
     // append random memory size to image tail
     uint64 seed = (uint64)(GetFuncAddr(&InitPELoader));
     uint32 size = loader->ImageSize;
-    size += (uint32)(RandIntN(seed, 128) * 4096);
+    size += (uint32)(RandUintN(seed, 128) * 4096);
     // allocate memory for write PE image
     void* mem = loader->VirtualAlloc(0, size, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (mem == NULL)
@@ -596,11 +603,27 @@ static bool processIAT(PELoader* loader)
 }
 
 // backupPEImage is used to execute PE image multi times.
-static errno backupPEImage(PELoader* loader)
+static bool backupPEImage(PELoader* loader)
 {
-
-
-    return NO_ERROR;
+    // append random memory size to tail
+    uint64 seed = (uint64)(GetFuncAddr(&InitPELoader)) + 4096;
+    uint32 size = loader->ImageSize;
+    size += (uint32)(RandUintN(seed, 128) * 4096);
+    // allocate memory for write PE image
+    void* mem = loader->VirtualAlloc(0, size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    if (mem == NULL)
+    {
+        return false;
+    }
+    loader->PEBackup = mem;
+    // copy mapped PE image
+    mem_copy(mem, (void*)(loader->PEImage), loader->ImageSize);
+    // lock memory region with special argument for reuse PE image
+    if (!loader->VirtualLock(mem, 0))
+    {
+        return false;
+    }
+    return true;
 }
 
 static bool flushInstructionCache(PELoader* loader)
@@ -680,18 +703,25 @@ static errno cleanPELoader(PELoader* loader)
         }
     }
 
-    void* peImage = (void*)(loader->PEImage);
-
-
+    void* peImage  = (void*)(loader->PEImage);
+    void* peBackup = loader->PEBackup;
 
     if (virtualUnlock != NULL)
     {
-        // unlock memory page for release
+        // unlock memory page for PE image
         if (peImage != NULL)
         {
             if (!loader->VirtualUnlock(peImage, 0) && errno == NO_ERROR)
             {
                 errno = ERR_LOADER_UNLOCK_PE_IMAGE;
+            }
+        }
+        // unlock memory page for PE image backup
+        if (peBackup != NULL)
+        {
+            if (!loader->VirtualUnlock(peBackup, 0) && errno == NO_ERROR)
+            {
+                errno = ERR_LOADER_UNLOCK_BACKUP;
             }
         }
     }
@@ -705,6 +735,15 @@ static errno cleanPELoader(PELoader* loader)
             if (!virtualFree(peImage, 0, MEM_RELEASE) && errno == NO_ERROR)
             {
                 errno = ERR_LOADER_CLEAN_FREE_PE;
+            }
+        }
+        // release memory page for PE image backup
+        if (peBackup != NULL)
+        {
+            RandBuf(peBackup, loader->ImageSize);
+            if (!virtualFree(peBackup, 0, MEM_RELEASE) && errno == NO_ERROR)
+            {
+                errno = ERR_LOADER_CLEAN_FREE_BAK;
             }
         }
         // release main memory page
@@ -843,7 +882,7 @@ static errno ldr_exit_process()
     for (;;)
     {
         // create a thread for call ExitProcess
-        void*  addr = GetFuncAddr(&hook_ExitProcess);
+        void* addr = GetFuncAddr(&hook_ExitProcess);
         HANDLE hThread = loader->CreateThread(NULL, 0, addr, NULL, 0, NULL);
         if (hThread == NULL)
         {
@@ -1006,6 +1045,14 @@ uint LDR_Execute()
         return 0x1001;
     }
 
+    if (loader->IsRunning)
+    {
+        return 0x0000;
+    }
+
+    // recovery PE image from backup for process data like global variable
+    mem_copy((void*)loader->PEImage, loader->PEBackup, loader->ImageSize);
+
     bool success = true;
     for (;;)
     {
@@ -1038,6 +1085,9 @@ uint LDR_Execute()
         break;
     }
 
+    // update flag
+    loader->IsRunning = success;
+
     if (!ldr_unlock())
     {
         return 0x1002;
@@ -1053,12 +1103,21 @@ uint LDR_Execute()
 __declspec(noinline)
 errno LDR_Exit()
 {
+    PELoader* loader = getPELoaderPointer();
+
     if (!ldr_lock())
     {
         return ERR_LOADER_LOCK;
     }
 
+    if (!loader->IsRunning)
+    {
+        return NO_ERROR;
+    }
+
     errno errno = ldr_exit_process();
+
+    loader->IsRunning = false; // TODO think mutex
 
     if (!ldr_unlock())
     {
