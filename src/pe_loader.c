@@ -38,9 +38,9 @@ typedef struct {
     // loader context
     void*  MainMemPage; // store all structures
     void*  PEBackup;    // PE image backup
-    HANDLE hMutex;      // global mutex
-    HANDLE ExitCodeMu;  // lock exit code // TODO status
     bool   IsRunning;   // execute flag
+    HANDLE hMutex;      // global mutex
+    HANDLE StatusMu;    // lock loader status
 
     // store PE image information
     uintptr PEImage;
@@ -65,9 +65,9 @@ errno LDR_Destroy();
 
 // hard encoded address in getPELoaderPointer for replacement
 #ifdef _WIN64
-    #define PE_LOADER_POINTER 0x7FABCDEF111111FF
+    #define PE_LOADER_POINTER 0x7FABCDEF222222FF
 #elif _WIN32
-    #define PE_LOADER_POINTER 0x7FABCDFF
+    #define PE_LOADER_POINTER 0x7FAB22FF
 #endif
 static PELoader* getPELoaderPointer();
 
@@ -76,6 +76,7 @@ static bool ldr_unlock();
 
 static void* allocPELoaderMemPage(PELoader_Cfg* cfg);
 static bool  initPELoaderAPI(PELoader* loader);
+static bool  lockMainMemPage(PELoader* loader);
 static bool  adjustPageProtect(PELoader* loader, DWORD* old);
 static bool  recoverPageProtect(PELoader* loader, DWORD protect);
 static bool  updatePELoaderPointer(PELoader* loader);
@@ -102,6 +103,8 @@ static void pe_entry_point();
 static void pe_dll_main(DWORD dwReason);
 static void set_exit_code(uint code);
 static uint get_exit_code();
+static void set_running(bool run);
+static bool is_running();
 
 static LPSTR  hook_GetCommandLineA();
 static LPWSTR hook_GetCommandLineW();
@@ -145,6 +148,11 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
         if (!initPELoaderAPI(loader))
         {
             errno = ERR_LOADER_INIT_API;
+            break;
+        }
+        if (!lockMainMemPage(loader))
+        {
+            errno = ERR_LOADER_LOCK_MAIN_MEM;
             break;
         }
         if (!adjustPageProtect(loader, &oldProtect))
@@ -310,6 +318,11 @@ static bool initPELoaderAPI(PELoader* loader)
     return true;
 }
 
+static bool lockMainMemPage(PELoader* loader)
+{
+    return loader->VirtualLock(loader->MainMemPage, 0);
+}
+    
 // CANNOT merge updatePELoaderPointer and recoverPELoaderPointer
 // to one function with two arguments, otherwise the compiler
 // will generate the incorrect instructions.
@@ -650,6 +663,7 @@ static void erasePELoaderMethods(PELoader* loader)
 // ======================== these instructions will not be erased ========================
 
 // change memory protect for dynamic update pointer that hard encode.
+__declspec(noinline)
 static bool adjustPageProtect(PELoader* loader, DWORD* old)
 {
     if (loader->Config.NotAdjustProtect)
@@ -662,6 +676,7 @@ static bool adjustPageProtect(PELoader* loader, DWORD* old)
     return loader->VirtualProtect((void*)begin, size, PAGE_EXECUTE_READWRITE, old);
 }
 
+__declspec(noinline)
 static bool recoverPageProtect(PELoader* loader, DWORD protect)
 {
     if (loader->Config.NotAdjustProtect)
@@ -693,16 +708,17 @@ static errno cleanPELoader(PELoader* loader)
                 errno = ERR_LOADER_CLEAN_G_MUTEX;
             }
         }
-        // close exit code mutex
-        if (loader->ExitCodeMu != NULL)
+        // close status mutex
+        if (loader->StatusMu != NULL)
         {
-            if (!closeHandle(loader->ExitCodeMu) && errno == NO_ERROR)
+            if (!closeHandle(loader->StatusMu) && errno == NO_ERROR)
             {
-                errno = ERR_LOADER_CLEAN_EC_MUTEX;
+                errno = ERR_LOADER_CLEAN_S_MUTEX;
             }
         }
     }
 
+    void* memPage  = loader->MainMemPage;
     void* peImage  = (void*)(loader->PEImage);
     void* peBackup = loader->PEBackup;
 
@@ -722,6 +738,14 @@ static errno cleanPELoader(PELoader* loader)
             if (!loader->VirtualUnlock(peBackup, 0) && errno == NO_ERROR)
             {
                 errno = ERR_LOADER_UNLOCK_BACKUP;
+            }
+        }
+        // unlock main memory page for structure
+        if (memPage != NULL)
+        {
+            if (!loader->VirtualUnlock(memPage, 0) && errno == NO_ERROR)
+            {
+                errno = ERR_LOADER_UNLOCK_MAIN_MEM;
             }
         }
     }
@@ -747,7 +771,6 @@ static errno cleanPELoader(PELoader* loader)
             }
         }
         // release main memory page
-        void* memPage = loader->MainMemPage;
         if (memPage != NULL)
         {
             RandBuf(memPage, MAIN_MEM_PAGE_SIZE);
@@ -852,18 +875,18 @@ static errno ldr_init_mutex()
 {
     PELoader* loader = getPELoaderPointer();
 
-    // close old exit code mutex
-    if (loader->ExitCodeMu != NULL)
+    // close old status mutex
+    if (loader->StatusMu != NULL)
     {
-        loader->CloseHandle(loader->ExitCodeMu);
+        loader->CloseHandle(loader->StatusMu);
     }
-    // create new exit code mutex
-    HANDLE exitCodeMu = loader->CreateMutexA(NULL, false, NULL);
-    if (exitCodeMu == NULL)
+    // create new status mutex
+    HANDLE statusMu = loader->CreateMutexA(NULL, false, NULL);
+    if (statusMu == NULL)
     {
-        return ERR_LOADER_CREATE_EC_MUTEX;
+        return ERR_LOADER_CREATE_S_MUTEX;
     }
-    loader->ExitCodeMu = exitCodeMu;
+    loader->StatusMu = statusMu;
     return NO_ERROR;
 }
 
@@ -972,6 +995,7 @@ static void hook_ExitProcess(UINT uExitCode)
     dbg_log("[PE Loader]", "ExitProcess: %zu", uExitCode);
 
     set_exit_code(uExitCode);
+    set_running(false);
 
     loader->ExitProcess(uExitCode);
 }
@@ -1007,32 +1031,64 @@ static void set_exit_code(uint code)
 {
     PELoader* loader = getPELoaderPointer();
 
-    if (loader->WaitForSingleObject(loader->ExitCodeMu, INFINITE) != WAIT_OBJECT_0)
+    if (loader->WaitForSingleObject(loader->StatusMu, INFINITE) != WAIT_OBJECT_0)
     {
         return;
     }
 
     *loader->ExitCode = code;
 
-    loader->ReleaseMutex(loader->ExitCodeMu);
+    loader->ReleaseMutex(loader->StatusMu);
 }
 
 static uint get_exit_code()
 {
     PELoader* loader = getPELoaderPointer();
 
-    if (loader->WaitForSingleObject(loader->ExitCodeMu, INFINITE) != WAIT_OBJECT_0)
+    if (loader->WaitForSingleObject(loader->StatusMu, INFINITE) != WAIT_OBJECT_0)
     {
         return 1;
     }
 
     uint code = *loader->ExitCode;
 
-    if (!loader->ReleaseMutex(loader->ExitCodeMu))
+    if (!loader->ReleaseMutex(loader->StatusMu))
     {
         return 1;
     }
     return code;
+}
+
+static void set_running(bool run)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    if (loader->WaitForSingleObject(loader->StatusMu, INFINITE) != WAIT_OBJECT_0)
+    {
+        return;
+    }
+
+    loader->IsRunning = run;
+
+    loader->ReleaseMutex(loader->StatusMu);
+}
+
+static bool is_running()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    if (loader->WaitForSingleObject(loader->StatusMu, INFINITE) != WAIT_OBJECT_0)
+    {
+        return false;
+    }
+
+    bool running = loader->IsRunning;
+
+    if (!loader->ReleaseMutex(loader->StatusMu))
+    {
+        return false;
+    }
+    return running;
 }
 
 __declspec(noinline)
@@ -1045,7 +1101,7 @@ uint LDR_Execute()
         return 0x1001;
     }
 
-    if (loader->IsRunning)
+    if (is_running())
     {
         return 0x0000;
     }
@@ -1085,8 +1141,10 @@ uint LDR_Execute()
         break;
     }
 
-    // update flag
-    loader->IsRunning = success;
+    if (success)
+    {
+        set_running(true);
+    }
 
     if (!ldr_unlock())
     {
@@ -1103,21 +1161,17 @@ uint LDR_Execute()
 __declspec(noinline)
 errno LDR_Exit()
 {
-    PELoader* loader = getPELoaderPointer();
-
     if (!ldr_lock())
     {
         return ERR_LOADER_LOCK;
     }
 
-    if (!loader->IsRunning)
+    if (!is_running())
     {
         return NO_ERROR;
     }
 
     errno errno = ldr_exit_process();
-
-    loader->IsRunning = false; // TODO think mutex
 
     if (!ldr_unlock())
     {
