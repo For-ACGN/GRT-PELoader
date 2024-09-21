@@ -51,8 +51,10 @@ typedef struct {
     uintptr EntryPoint;
     uintptr ImageBase;
     uint32  ImageSize;
-    uintptr ImportTable;
     bool    IsDLL;
+
+    // store TLS callback list
+    TLSCallback_t* TLSList;
 
     // write return value
     uint* ExitCode;
@@ -110,6 +112,11 @@ static bool is_running();
 static LPSTR  hook_GetCommandLineA();
 static LPWSTR hook_GetCommandLineW();
 static HANDLE hook_GetStdHandle(DWORD nStdHandle);
+static HANDLE hook_CreateThread(
+    POINTER lpThreadAttributes, SIZE_T dwStackSize, POINTER lpStartAddress,
+    LPVOID lpParameter, DWORD dwCreationFlags, DWORD* lpThreadId
+);
+static void   hook_ExitThread(DWORD dwExitCode);
 static void   hook_ExitProcess(UINT uExitCode);
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
@@ -461,6 +468,7 @@ static bool mapSections(PELoader* loader)
     {
         return false;
     }
+    loader->PEImage = (uintptr)mem;
     // lock memory region with special argument for reuse PE image
     if (!loader->VirtualLock(mem, 0))
     {
@@ -482,9 +490,7 @@ static bool mapSections(PELoader* loader)
         mem_copy(dst, src, sizeOfRawData);
         section += PE_SECTION_HEADER_SIZE;
     }
-    // record image memory address
-    loader->PEImage = peImage;
-    // update EntryPoint
+    // update EntryPoint absolute address
     loader->EntryPoint += peImage;
     return true;
 }
@@ -501,28 +507,16 @@ static bool processImport(PELoader* loader)
     {
         return true;
     }
-    // calculate the number of the library
-    PE_ImportDirectory* importDir;
-    uintptr table = importTable;
-    for (;;)
-    {
-        importDir = (PE_ImportDirectory*)(table);
-        if (importDir->Name == 0)
-        {
-            break;
-        }
-        table += PE_IMPORT_DIRECTORY_SIZE;
-    }
     // load library and fix function address
-    table = importTable;
+    Image_ImportDescriptor* import;
     for (;;)
     {
-        importDir = (PE_ImportDirectory*)(table);
-        if (importDir->Name == 0)
+        import = (Image_ImportDescriptor*)(importTable);
+        if (import->Name == 0)
         {
             break;
         }
-        LPCSTR dllName = (LPCSTR)(peImage + importDir->Name);
+        LPCSTR  dllName = (LPCSTR)(peImage + import->Name);
         HMODULE hModule = loader->LoadLibraryA(dllName);
         if (hModule == NULL)
         {
@@ -530,13 +524,13 @@ static bool processImport(PELoader* loader)
         }
         uintptr srcThunk;
         uintptr dstThunk;
-        if (importDir->OriginalFirstThunk != 0)
+        if (import->OriginalFirstThunk != 0)
         {
-            srcThunk = peImage + importDir->OriginalFirstThunk;
+            srcThunk = peImage + import->OriginalFirstThunk;
         } else {
-            srcThunk = peImage + importDir->FirstThunk;
+            srcThunk = peImage + import->FirstThunk;
         }
-        dstThunk = peImage + importDir->FirstThunk;
+        dstThunk = peImage + import->FirstThunk;
         // fix function address
         for (;;)
         {
@@ -565,9 +559,8 @@ static bool processImport(PELoader* loader)
             srcThunk += sizeof(uintptr);
             dstThunk += sizeof(uintptr);
         }
-        table += PE_IMPORT_DIRECTORY_SIZE;
+        importTable += sizeof(Image_ImportDescriptor);
     }
-    loader->ImportTable = importTable;
     return true;
 }
 
@@ -583,11 +576,11 @@ static bool fixRelocTable(PELoader* loader)
     {
         return true;
     }
-    PE_ImageBaseRelocation* baseReloc;
     uint64 addrOffset = (int64)(loader->PEImage) - (int64)(loader->ImageBase);
+    Image_BaseRelocation* baseReloc;
     for (;;)
     {
-        baseReloc = (PE_ImageBaseRelocation*)(relocTable);
+        baseReloc = (Image_BaseRelocation*)(relocTable);
         if (baseReloc->VirtualAddress == 0)
         {
             break;
@@ -629,14 +622,15 @@ static bool initTLSCallback(PELoader* loader)
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
     uintptr offset  = dataDir + IMAGE_DIRECTORY_ENTRY_TLS * PE_DATA_DIRECTORY_SIZE;
-    uintptr iatTable  = peImage + *(uint32*)(offset);
+    uintptr tlsTable  = peImage + *(uint32*)(offset);
     uint32  tableSize = *(uint32*)(offset + 4);
     // check need initialize tls callback
     if (tableSize == 0)
     {
         return true;
     }
-
+    Image_TLSDirectory* tls = (Image_TLSDirectory*)(tlsTable);
+    loader->TLSList = (TLSCallback_t*)(tls->AddressOfCallBacks);
     return true;
 }
 
@@ -1031,7 +1025,37 @@ static void pe_entry_point()
 {
     PELoader* loader = getPELoaderPointer();
 
+    // execute TLS callback list before call EntryPoint.
+    if (loader->TLSList != NULL)
+    {
+        TLSCallback_t* list = loader->TLSList;
+
+        while (*list != NULL)
+        {
+            TLSCallback_t callback = (TLSCallback_t)(*list);
+            callback((HMODULE)(loader->PEImage), DLL_PROCESS_ATTACH, NULL);
+            list++;
+        }
+        dbg_log("[PE Loader]", "call TLS callback with DLL_PROCESS_ATTACH");
+    }
+
+    // call EntryPoint usually is main.
     uint exitCode = ((uint(*)())(loader->EntryPoint))();
+
+    // execute TLS callback list after call EntryPoint.
+    if (loader->TLSList != NULL)
+    {
+        TLSCallback_t* list = loader->TLSList;
+
+        while (*list != NULL)
+        {
+            TLSCallback_t callback = (TLSCallback_t)(*list);
+            callback((HMODULE)(loader->PEImage), DLL_PROCESS_DETACH, NULL);
+            list++;
+        }
+        dbg_log("[PE Loader]", "call TLS callback with DLL_PROCESS_DETACH");
+    }
+
     hook_ExitProcess(exitCode);
 }
 
