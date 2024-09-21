@@ -22,7 +22,8 @@ var (
 )
 
 func init() {
-	flag.StringVar(&tplDir, "tpl", "templates", "set shellcode templates directory")
+	// TODO read options
+	flag.StringVar(&tplDir, "tpl", "template", "set shellcode templates directory")
 	flag.StringVar(&pePath, "pe", "", "set input PE file path")
 	flag.StringVar(&cmdLine, "cmd", "", "set command line for exe")
 	flag.BoolVar(&wait, "wait", false, "wait for shellcode to exit")
@@ -48,11 +49,11 @@ func main() {
 		stdHandle []byte
 	)
 	switch peFile.OptionalHeader.(type) {
-	case pe.OptionalHeader64:
+	case *pe.OptionalHeader64:
 		template = ldrX64
 		stdHandle = make([]byte, 8)
 		fmt.Println("select template for x64")
-	case pe.OptionalHeader32:
+	case *pe.OptionalHeader32:
 		template = ldrX86
 		stdHandle = make([]byte, 4)
 		fmt.Println("select template for x86")
