@@ -85,8 +85,9 @@ static errno initPELoaderEnvironment(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
+static bool  processImport(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
-static bool  processIAT(PELoader* loader);
+static bool  initTLSCallback(PELoader* loader);
 static bool  backupPEImage(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
 
@@ -387,13 +388,17 @@ static errno loadPEImage(PELoader* loader)
     {
         return ERR_LOADER_MAP_SECTIONS;
     }
+    if (!processImport(loader))
+    {
+        return ERR_LOADER_PROCESS_IMPORT;
+    }
     if (!fixRelocTable(loader))
     {
         return ERR_LOADER_FIX_RELOC_TABLE;
     }
-    if (!processIAT(loader))
+    if (!initTLSCallback(loader))
     {
-        return ERR_LOADER_PROCESS_IAT;
+        return ERR_LOADER_INIT_TLS_CALLBACK;
     }
     dbg_log("[PE Loader]", "image: 0x%zX", loader->PEImage);
     return NO_ERROR;
@@ -472,8 +477,8 @@ static bool mapSections(PELoader* loader)
         uint32 virtualAddress   = *(uint32*)(section + 12);
         uint32 sizeOfRawData    = *(uint32*)(section + 16);
         uint32 pointerToRawData = *(uint32*)(section + 20);
-        byte*  dst = (byte*)(peImage + virtualAddress);
-        byte*  src = (byte*)(imageAddr + pointerToRawData);
+        byte* dst = (byte*)(peImage + virtualAddress);
+        byte* src = (byte*)(imageAddr + pointerToRawData);
         mem_copy(dst, src, sizeOfRawData);
         section += PE_SECTION_HEADER_SIZE;
     }
@@ -484,69 +489,21 @@ static bool mapSections(PELoader* loader)
     return true;
 }
 
-static bool fixRelocTable(PELoader* loader)
+static bool processImport(PELoader* loader)
 {
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
-    uintptr offset = dataDir + (uintptr)(5 * PE_DATA_DIRECTORY_SIZE);
-    uintptr relocTable = peImage + *(uint32*)(offset);
-    uint32 tableSize = *(uint32*)(offset + 4);
-    uint64  addressOffset = (int64)(loader->PEImage) - (int64)(loader->ImageBase);
-    // check need relocation
+    uintptr offset  = dataDir + IMAGE_DIRECTORY_ENTRY_IMPORT * PE_DATA_DIRECTORY_SIZE;
+    uintptr importTable = peImage + *(uint32*)(offset);
+    uint32  tableSize   = *(uint32*)(offset + 4);
+    // check need import
     if (tableSize == 0)
     {
         return true;
     }
-    PE_ImageBaseRelocation* baseReloc;
-    for (;;)
-    {
-        baseReloc = (PE_ImageBaseRelocation*)(relocTable);
-        if (baseReloc->VirtualAddress == 0)
-        {
-            break;
-        }
-        uintptr infoPtr = relocTable + 8;
-        uintptr dstAddr = peImage + baseReloc->VirtualAddress;
-        for (uint32 i = 0; i < (baseReloc->SizeOfBlock - 8) / 2; i++)
-        {
-            uint16 info = *(uint16*)(infoPtr);
-            uint16 type = info >> 12;
-            uint16 off  = info & 0xFFF;
-
-            uint32* patchAddr32;
-            uint64* patchAddr64;
-            switch (type)
-            {
-            case IMAGE_REL_BASED_ABSOLUTE:
-                break;
-            case IMAGE_REL_BASED_HIGHLOW:
-                patchAddr32 = (uint32*)(dstAddr + off);
-                *patchAddr32 += (uint32)(addressOffset);
-                break;
-            case IMAGE_REL_BASED_DIR64:
-                patchAddr64 = (uint64*)(dstAddr + off);
-                *patchAddr64 += (uint64)(addressOffset);
-                break;
-            default:
-                return false;
-            }
-            infoPtr += 2;
-        }
-        relocTable += baseReloc->SizeOfBlock;
-    }
-    return true;
-}
-
-static bool processIAT(PELoader* loader)
-{
-    uintptr peImage = loader->PEImage;
-    uintptr dataDir = loader->DataDir;
-    uintptr offset  = dataDir + (uintptr)(1 * PE_DATA_DIRECTORY_SIZE);
-    uintptr importTable = peImage + *(uint32*)(offset);
     // calculate the number of the library
     PE_ImportDirectory* importDir;
     uintptr table = importTable;
-    uint32  numDLL = 0;
     for (;;)
     {
         importDir = (PE_ImportDirectory*)(table);
@@ -554,7 +511,6 @@ static bool processIAT(PELoader* loader)
         {
             break;
         }
-        numDLL++;
         table += PE_IMPORT_DIRECTORY_SIZE;
     }
     // load library and fix function address
@@ -612,6 +568,75 @@ static bool processIAT(PELoader* loader)
         table += PE_IMPORT_DIRECTORY_SIZE;
     }
     loader->ImportTable = importTable;
+    return true;
+}
+
+static bool fixRelocTable(PELoader* loader)
+{
+    uintptr peImage = loader->PEImage;
+    uintptr dataDir = loader->DataDir;
+    uintptr offset  = dataDir + IMAGE_DIRECTORY_ENTRY_BASERELOC * PE_DATA_DIRECTORY_SIZE;
+    uintptr relocTable = peImage + *(uint32*)(offset);
+    uint32  tableSize  = *(uint32*)(offset + 4);
+    // check need relocation
+    if (tableSize == 0)
+    {
+        return true;
+    }
+    PE_ImageBaseRelocation* baseReloc;
+    uint64 addrOffset = (int64)(loader->PEImage) - (int64)(loader->ImageBase);
+    for (;;)
+    {
+        baseReloc = (PE_ImageBaseRelocation*)(relocTable);
+        if (baseReloc->VirtualAddress == 0)
+        {
+            break;
+        }
+        uintptr infoPtr = relocTable + 8;
+        uintptr dstAddr = peImage + baseReloc->VirtualAddress;
+        for (uint32 i = 0; i < (baseReloc->SizeOfBlock - 8) / 2; i++)
+        {
+            uint16 info = *(uint16*)(infoPtr);
+            uint16 type = info >> 12;
+            uint16 off  = info & 0xFFF;
+
+            uint32* patchAddr32;
+            uint64* patchAddr64;
+            switch (type)
+            {
+            case IMAGE_REL_BASED_ABSOLUTE:
+                break;
+            case IMAGE_REL_BASED_HIGHLOW:
+                patchAddr32 = (uint32*)(dstAddr + off);
+                *patchAddr32 += (uint32)(addrOffset);
+                break;
+            case IMAGE_REL_BASED_DIR64:
+                patchAddr64 = (uint64*)(dstAddr + off);
+                *patchAddr64 += (uint64)(addrOffset);
+                break;
+            default:
+                return false;
+            }
+            infoPtr += 2;
+        }
+        relocTable += baseReloc->SizeOfBlock;
+    }
+    return true;
+}
+
+static bool initTLSCallback(PELoader* loader)
+{
+    uintptr peImage = loader->PEImage;
+    uintptr dataDir = loader->DataDir;
+    uintptr offset  = dataDir + IMAGE_DIRECTORY_ENTRY_TLS * PE_DATA_DIRECTORY_SIZE;
+    uintptr iatTable  = peImage + *(uint32*)(offset);
+    uint32  tableSize = *(uint32*)(offset + 4);
+    // check need initialize tls callback
+    if (tableSize == 0)
+    {
+        return true;
+    }
+
     return true;
 }
 
@@ -956,8 +981,6 @@ static HANDLE hook_GetStdHandle(DWORD nStdHandle)
 {
     PELoader* loader = getPELoaderPointer();
 
-    dbg_log("[PE Loader]", "GetStdHandle: %d", nStdHandle);
-
     // try to get it from config
     HANDLE hStdInput  = loader->Config.StdInput;
     HANDLE hStdOutput = loader->Config.StdOutput;
@@ -968,18 +991,21 @@ static HANDLE hook_GetStdHandle(DWORD nStdHandle)
     case STD_INPUT_HANDLE:
         if (hStdInput != NULL)
         {
+            dbg_log("[PE Loader]", "Get STD_INPUT_HANDLE");
             return hStdInput;
         }
         break;
     case STD_OUTPUT_HANDLE:
         if (hStdOutput != NULL)
         {
+            dbg_log("[PE Loader]", "Get STD_OUTPUT_HANDLE");
             return hStdOutput;
         }
         break;
     case STD_ERROR_HANDLE:
         if (hStdError != NULL)
         {
+            dbg_log("[PE Loader]", "Get STD_ERROR_HANDLE");
             return hStdError;
         }
         break;
