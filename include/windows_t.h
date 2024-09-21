@@ -68,6 +68,11 @@ typedef BOOL (*DllMain_t)
     HMODULE hModule, DWORD dwReason, LPVOID lpReserved
 );
 
+typedef void (*TLSCallback_t)
+(
+    HMODULE hModule, DWORD dwReason, LPVOID lpReserved
+);
+
 typedef HMODULE (*LoadLibraryA_t)
 (
     LPCSTR lpLibFileName
@@ -111,6 +116,16 @@ typedef BOOL (*VirtualFree_t)
 typedef BOOL (*VirtualProtect_t)
 (
     LPVOID lpAddress, SIZE_T dwSize, DWORD flNewProtect, DWORD* lpflOldProtect
+);
+
+typedef BOOL (*VirtualLock_t)
+(
+    LPVOID lpAddress, SIZE_T dwSize
+);
+
+typedef BOOL (*VirtualUnlock_t)
+(
+    LPVOID lpAddress, SIZE_T dwSize
 );
 
 typedef HANDLE (*CreateThread_t)
