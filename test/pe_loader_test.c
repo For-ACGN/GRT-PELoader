@@ -10,9 +10,10 @@ bool TestInitPELoader()
 {
     // read PE file
 #ifdef _WIN64
-    FILE* file = fopen("testdata\\go_amd64.exe", "rb"); 
+    // FILE* file = fopen("testdata\\rust_x64.exe", "rb");
+    FILE* file = fopen("E:\\Temp\\rust.exe", "rb");
 #elif _WIN32
-    FILE* file = fopen("testdata\\go_386.exe", "rb");
+    FILE* file = fopen("testdata\\rust_x86.exe", "rb");
 #endif
     if (file == NULL)
     {
@@ -48,30 +49,32 @@ bool TestInitPELoader()
         .NotAdjustProtect    = false,
         .TrackCurrentThread  = false,
     };
-    Runtime_M* runtime = InitRuntime(&opts);
+    runtime = InitRuntime(&opts);
     if (runtime == NULL)
     {
-        printf_s("failed to initialize runtime: 0x%lX\n", GetLastErrno());
+        printf_s("failed to initialize runtime: 0x%X\n", GetLastErrno());
         return false;
     }
 
     LPSTR cmdLine = "loader.exe -p1 123 -p2 \"test\"";
 
     PELoader_Cfg cfg = {
+        .FindAPI = runtime->FindAPI,
+
         .Image       = buf,
         .CommandLine = cmdLine,
         .StdInput    = NULL,
         .StdOutput   = NULL,
         .StdError    = NULL,
-        .WaitMain    = true,
+        .WaitMain    = false,
 
-        .FindAPI       = FindAPI, // runtime->FindAPI
-        .AdjustProtect = true,
+        .NotEraseInstruction = true,
+        .NotAdjustProtect    = false,
     };
     pe_loader = InitPELoader(&cfg);
     if (pe_loader == NULL)
     {
-        printf_s("failed to initialize PE loader: 0x%lX\n", GetLastErrno());
+        printf_s("failed to initialize PE loader: 0x%X\n", GetLastErrno());
         return false;
     }
     return true;
@@ -90,6 +93,14 @@ bool TestPELoader_Execute()
         printf_s("unexpected exit code: 0x%zX\n", exitCode);
         return false;
     }
+    runtime->Sleep(5000);
+
+    errno errno = pe_loader->Exit();
+    if (errno != NO_ERROR)
+    {
+        printf_s("failed to exit PE loader: 0x%X\n", GetLastErrno());
+        return false;
+    }
     return true;
 }
 
@@ -100,10 +111,18 @@ bool TestPELoader_Exit()
         return false;
     }
 
+    uint exitCode = pe_loader->Execute();
+    if (exitCode != 0)
+    {
+        printf_s("unexpected exit code: 0x%zX\n", exitCode);
+        return false;
+    }
+    runtime->Sleep(5000);
+
     errno errno = pe_loader->Exit();
     if (errno != NO_ERROR)
     {
-        printf_s("failed to exit PE loader: 0x%lX\n", GetLastErrno());
+        printf_s("failed to exit PE loader: 0x%X\n", GetLastErrno());
         return false;
     }
     return true;
@@ -116,10 +135,18 @@ bool TestPELoader_Destroy()
         return false;
     }
 
+    uint exitCode = pe_loader->Execute();
+    if (exitCode != 0)
+    {
+        printf_s("unexpected exit code: 0x%zX\n", exitCode);
+        return false;
+    }
+    runtime->Sleep(5000);
+
     errno errno = pe_loader->Destroy();
     if (errno != NO_ERROR)
     {
-        printf_s("failed to destroy PE loader: 0x%lX\n", GetLastErrno());
+        printf_s("failed to destroy PE loader: 0x%X\n", GetLastErrno());
         return false;
     }
     return true;
