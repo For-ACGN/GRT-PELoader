@@ -25,6 +25,7 @@ typedef struct {
     LoadLibraryA_t          LoadLibraryA;
     GetProcAddress_t        GetProcAddress;
     CreateThread_t          CreateThread;
+    ExitThread_t            ExitThread;
     FlushInstructionCache_t FlushInstructionCache;
     CreateMutexA_t          CreateMutexA;
     ReleaseMutex_t          ReleaseMutex;
@@ -99,6 +100,7 @@ static errno cleanPELoader(PELoader* loader);
 static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
 static void* ldr_getMethods(byte* module, LPCSTR lpProcName);
 static errno ldr_init_mutex();
+static void  ldr_tls_callback(DWORD dwReason);
 static errno ldr_exit_process();
 static void  ldr_epilogue();
 
@@ -118,6 +120,8 @@ static HANDLE hook_CreateThread(
 );
 static void   hook_ExitThread(DWORD dwExitCode);
 static void   hook_ExitProcess(UINT uExitCode);
+
+static void stub_CreateThread(LPVOID lpParameter);
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
 {
@@ -143,11 +147,6 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     // store config and context
     loader->Config = *cfg;
     loader->MainMemPage = memPage;
-    // set default FindAPI
-    if (loader->Config.FindAPI == NULL)
-    {
-        loader->Config.FindAPI = GetFuncAddr(&FindAPI);
-    }
     // initialize loader
     DWORD oldProtect = 0;
     errno errno = NO_ERROR;
@@ -265,6 +264,7 @@ static bool initPELoaderAPI(PELoader* loader)
         { 0x90BD05BA72DD948C, 0x253672CEAE439BB6 }, // LoadLibraryA
         { 0xF4E6DE881A59F6A0, 0xBC2E958CCBE70AA2 }, // GetProcAddress
         { 0x62E83480AE0AAFC7, 0x86C0AECD3EF92256 }, // CreateThread
+        { 0xE0846C4ED5129CD3, 0x8C8C31D65FAFC1C4 }, // ExitThread
         { 0xE8CA42297DA7319C, 0xAC51BC3A630A84FC }, // FlushInstructionCache
         { 0x04A85D44E64689B3, 0xBB2834EF8BE725C9 }, // CreateMutexA
         { 0x5B84A4B6173E4B44, 0x089FC914B21A66DA }, // ReleaseMutex
@@ -285,6 +285,7 @@ static bool initPELoaderAPI(PELoader* loader)
         { 0x3DAF1E96, 0xD7E436F3 }, // LoadLibraryA
         { 0xE971801A, 0xEC6F6D90 }, // GetProcAddress
         { 0xD1AFE117, 0xDA772D98 }, // CreateThread
+        { 0xC4471F00, 0x6B6811C7 }, // ExitThread
         { 0x73AFF9EE, 0x16AA8D66 }, // FlushInstructionCache
         { 0xFF3A4BBB, 0xD2F55A75 }, // CreateMutexA
         { 0x30B41C8C, 0xDD13B99D }, // ReleaseMutex
@@ -314,15 +315,16 @@ static bool initPELoaderAPI(PELoader* loader)
     loader->LoadLibraryA          = list[0x05].proc;
     loader->GetProcAddress        = list[0x06].proc;
     loader->CreateThread          = list[0x07].proc;
-    loader->FlushInstructionCache = list[0x08].proc;
-    loader->CreateMutexA          = list[0x09].proc;
-    loader->ReleaseMutex          = list[0x0A].proc;
-    loader->WaitForSingleObject   = list[0x0B].proc;
-    loader->CloseHandle           = list[0x0C].proc;
-    loader->GetCommandLineA       = list[0x0D].proc;
-    loader->GetCommandLineW       = list[0x0E].proc;
-    loader->GetStdHandle          = list[0x0F].proc;
-    loader->ExitProcess           = list[0x10].proc;
+    loader->ExitThread            = list[0x08].proc;
+    loader->FlushInstructionCache = list[0x09].proc;
+    loader->CreateMutexA          = list[0x0A].proc;
+    loader->ReleaseMutex          = list[0x0B].proc;
+    loader->WaitForSingleObject   = list[0x0C].proc;
+    loader->CloseHandle           = list[0x0D].proc;
+    loader->GetCommandLineA       = list[0x0E].proc;
+    loader->GetCommandLineW       = list[0x0F].proc;
+    loader->GetStdHandle          = list[0x10].proc;
+    loader->ExitProcess           = list[0x11].proc;
     return true;
 }
 
@@ -407,7 +409,7 @@ static errno loadPEImage(PELoader* loader)
     {
         return ERR_LOADER_INIT_TLS_CALLBACK;
     }
-    dbg_log("[PE Loader]", "image: 0x%zX", loader->PEImage);
+    dbg_log("[PE Loader]", "PE Image:  0x%zX", loader->PEImage);
     return NO_ERROR;
 }
 
@@ -865,17 +867,23 @@ static void* ldr_getMethods(byte* module, LPCSTR lpProcName)
     method methods[] =
 #ifdef _WIN64
     {
+        // { 0xC26C7EDC042682D8, 0x0CE719F33FC82318, GetFuncAddr(&ldr_GetProcAddress)   }, dead loop?
         { 0xA23FAC0E6398838A, 0xE4990D7D4933EE6A, GetFuncAddr(&hook_GetCommandLineA) },
         { 0xABD1E8F0D28E9F46, 0xAF34F5979D300C70, GetFuncAddr(&hook_GetCommandLineW) },
-        { 0x33F761AFCEBF69AA, 0x6D591538B8A5428F, GetFuncAddr(&hook_GetStdHandle) },
-        { 0xC9C5D350BB118FAE, 0x061A602F681F2636, GetFuncAddr(&hook_ExitProcess) },
+        { 0x33F761AFCEBF69AA, 0x6D591538B8A5428F, GetFuncAddr(&hook_GetStdHandle)    },
+        { 0x3C0574BF5EF852B3, 0xAF1A54F0416DC1C9, GetFuncAddr(&hook_CreateThread)    },
+        { 0x4DEF18548F22FF42, 0x107052342545FBAA, GetFuncAddr(&hook_ExitThread)      },
+        { 0xC9C5D350BB118FAE, 0x061A602F681F2636, GetFuncAddr(&hook_ExitProcess)     },
     };
 #elif _WIN32
     {
+        { 0xA9AA650C, 0x56E5FE8B, GetFuncAddr(&ldr_GetProcAddress) },
         { 0x7971F5C6, 0xC2A37949, GetFuncAddr(&hook_GetCommandLineA) },
         { 0xB921D9EC, 0xD12A689C, GetFuncAddr(&hook_GetCommandLineW) },
-        { 0x8ED77E9F, 0xF7E28EA3, GetFuncAddr(&hook_GetStdHandle) },
-        { 0x2BE03D8D, 0xDEB0A6F3, GetFuncAddr(&hook_ExitProcess) },
+        { 0x8ED77E9F, 0xF7E28EA3, GetFuncAddr(&hook_GetStdHandle)    },
+        { 0x71A66537, 0x6281B869, GetFuncAddr(&hook_CreateThread)    },
+        { 0x6F906B26, 0x297D984C, GetFuncAddr(&hook_ExitThread)      },
+        { 0x2BE03D8D, 0xDEB0A6F3, GetFuncAddr(&hook_ExitProcess)     },
     };
 #endif
     for (int i = 0; i < arrlen(methods); i++)
@@ -907,6 +915,45 @@ static errno ldr_init_mutex()
     }
     loader->StatusMu = statusMu;
     return NO_ERROR;
+}
+
+__declspec(noinline)
+static void ldr_tls_callback(DWORD dwReason)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    if (loader->TLSList == NULL)
+    {
+        return;
+    }
+
+    TLSCallback_t* list = loader->TLSList;
+    while (*list != NULL)
+    {
+        
+        TLSCallback_t callback = (TLSCallback_t)(*list);
+
+        dbg_log("[PE Loader]", "call TLS callback: 0x%zX", callback);
+
+        callback((HMODULE)(loader->PEImage), dwReason, NULL);
+        list++;
+    }
+
+    switch (dwReason)
+    {
+    case DLL_PROCESS_ATTACH:
+        dbg_log("[PE Loader]", "call TLS callback with DLL_PROCESS_ATTACH");
+        break;
+    case DLL_PROCESS_DETACH:
+        dbg_log("[PE Loader]", "call TLS callback with DLL_PROCESS_DETACH");
+        break;
+    case DLL_THREAD_ATTACH:
+        dbg_log("[PE Loader]", "call TLS callback with DLL_THREAD_ATTACH");
+        break;
+    case DLL_THREAD_DETACH:
+        dbg_log("[PE Loader]", "call TLS callback with DLL_THREAD_DETACH");
+        break;
+    }
 }
 
 static errno ldr_exit_process()
@@ -971,6 +1018,7 @@ static LPWSTR hook_GetCommandLineW()
     return loader->GetCommandLineW();
 }
 
+__declspec(noinline)
 static HANDLE hook_GetStdHandle(DWORD nStdHandle)
 {
     PELoader* loader = getPELoaderPointer();
@@ -1007,6 +1055,75 @@ static HANDLE hook_GetStdHandle(DWORD nStdHandle)
     return loader->GetStdHandle(nStdHandle);
 }
 
+typedef struct {
+    POINTER lpStartAddress;
+    LPVOID  lpParameter;
+} createThreadCtx;
+
+typedef void (*func_entry_t)(LPVOID lpParameter);
+
+__declspec(noinline)
+static HANDLE hook_CreateThread(
+    POINTER lpThreadAttributes, SIZE_T dwStackSize, POINTER lpStartAddress,
+    LPVOID lpParameter, DWORD dwCreationFlags, DWORD* lpThreadId
+)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    dbg_log("debug", "Create New Thread");
+
+    // alloc memory for store actual StartAddress and Parameter
+    LPVOID para = loader->VirtualAlloc(0, 4096, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    if (para == NULL)
+    {
+        return NULL;
+    }
+
+    createThreadCtx* ctx = (createThreadCtx*)para;
+    ctx->lpStartAddress = lpStartAddress;
+    ctx->lpParameter    = lpParameter;
+
+    // create thread at stub, that function will call actual StartAddress
+    void* addr = GetFuncAddr(&stub_CreateThread);
+    HANDLE hThread = loader->CreateThread
+    (
+        lpThreadAttributes, dwStackSize, addr,
+        para, dwCreationFlags, lpThreadId
+    );
+    return hThread;
+}
+
+__declspec(noinline)
+static void stub_CreateThread(LPVOID lpParameter)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    // copy arguments from context 
+    createThreadCtx* ctx = (createThreadCtx*)lpParameter;
+    POINTER startAddress = ctx->lpStartAddress;
+    LPVOID  parameter    = ctx->lpParameter;
+    loader->VirtualFree(lpParameter, 0, MEM_RELEASE);
+
+    // execute TLS callback list before call function.
+    ldr_tls_callback(DLL_THREAD_ATTACH);
+
+    func_entry_t entry = (func_entry_t)startAddress;
+    entry(parameter);
+}
+
+__declspec(noinline)
+static void hook_ExitThread(DWORD dwExitCode)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    dbg_log("debug", "Exit Thread");
+
+    // execute TLS callback list before exit thread.
+    ldr_tls_callback(DLL_THREAD_DETACH);
+
+    loader->ExitThread(dwExitCode);
+}
+
 __declspec(noinline)
 static void hook_ExitProcess(UINT uExitCode)
 {
@@ -1026,36 +1143,15 @@ static void pe_entry_point()
     PELoader* loader = getPELoaderPointer();
 
     // execute TLS callback list before call EntryPoint.
-    if (loader->TLSList != NULL)
-    {
-        TLSCallback_t* list = loader->TLSList;
-
-        while (*list != NULL)
-        {
-            TLSCallback_t callback = (TLSCallback_t)(*list);
-            callback((HMODULE)(loader->PEImage), DLL_PROCESS_ATTACH, NULL);
-            list++;
-        }
-        dbg_log("[PE Loader]", "call TLS callback with DLL_PROCESS_ATTACH");
-    }
+    ldr_tls_callback(DLL_PROCESS_ATTACH);
 
     // call EntryPoint usually is main.
     uint exitCode = ((uint(*)())(loader->EntryPoint))();
 
     // execute TLS callback list after call EntryPoint.
-    if (loader->TLSList != NULL)
-    {
-        TLSCallback_t* list = loader->TLSList;
+    ldr_tls_callback(DLL_PROCESS_DETACH);
 
-        while (*list != NULL)
-        {
-            TLSCallback_t callback = (TLSCallback_t)(*list);
-            callback((HMODULE)(loader->PEImage), DLL_PROCESS_DETACH, NULL);
-            list++;
-        }
-        dbg_log("[PE Loader]", "call TLS callback with DLL_PROCESS_DETACH");
-    }
-
+    // exit process
     hook_ExitProcess(exitCode);
 }
 
@@ -1063,6 +1159,9 @@ __declspec(noinline)
 static void pe_dll_main(DWORD dwReason)
 {
     PELoader* loader = getPELoaderPointer();
+
+    // execute TLS callback list before call DllMain.
+    ldr_tls_callback(DLL_PROCESS_ATTACH);
 
     DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
     HMODULE   hModule = (HMODULE)(loader->PEImage);
@@ -1075,6 +1174,9 @@ static void pe_dll_main(DWORD dwReason)
         exitCode = 1;
     }
     set_exit_code(exitCode);
+
+    // execute TLS callback list after call DllMain.
+    ldr_tls_callback(DLL_PROCESS_DETACH);
 }
 
 static void set_exit_code(uint code)
