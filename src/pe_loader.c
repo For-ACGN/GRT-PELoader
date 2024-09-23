@@ -121,6 +121,8 @@ static HANDLE hook_CreateThread(
 static void   hook_ExitThread(DWORD dwExitCode);
 static void   hook_ExitProcess(UINT uExitCode);
 
+static void hook_msvcrt_exit(int exitcode);
+
 static void stub_ExecuteThread(LPVOID lpParameter);
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
@@ -862,6 +864,7 @@ void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
     return loader->GetProcAddress(hModule, lpProcName);
 }
 
+__declspec(noinline)
 static void* ldr_GetMethods(byte* module, LPCSTR lpProcName)
 {
     typedef struct {
@@ -877,6 +880,7 @@ static void* ldr_GetMethods(byte* module, LPCSTR lpProcName)
         { 0x3C0574BF5EF852B3, 0xAF1A54F0416DC1C9, GetFuncAddr(&hook_CreateThread)    },
         { 0x4DEF18548F22FF42, 0x107052342545FBAA, GetFuncAddr(&hook_ExitThread)      },
         { 0xC9C5D350BB118FAE, 0x061A602F681F2636, GetFuncAddr(&hook_ExitProcess)     },
+        { 0xC32827BED690ED91, 0x07E354CB981B352E, GetFuncAddr(&hook_msvcrt_exit)     },
     };
 #elif _WIN32
     {
@@ -887,6 +891,7 @@ static void* ldr_GetMethods(byte* module, LPCSTR lpProcName)
         { 0x71A66537, 0x6281B869, GetFuncAddr(&hook_CreateThread)    },
         { 0x6F906B26, 0x297D984C, GetFuncAddr(&hook_ExitThread)      },
         { 0x2BE03D8D, 0xDEB0A6F3, GetFuncAddr(&hook_ExitProcess)     },
+        { 0xF71C9615, 0xF38936BF, GetFuncAddr(&hook_msvcrt_exit)     },
     };
 #endif
     for (int i = 0; i < arrlen(methods); i++)
@@ -963,7 +968,7 @@ static errno ldr_exit_process()
     // make callback about DLL_PROCESS_DETACH
     if (loader->IsDLL)
     {
-        pe_dll_main(DLL_PROCESS_DETACH, true);
+        pe_dll_main(DLL_PROCESS_DETACH, true); // TODO prevent execute twice
     }
 
     // call ExitProcess for terminate all threads
@@ -1115,13 +1120,15 @@ static void stub_ExecuteThread(LPVOID lpParameter)
     func_entry_t entry = (func_entry_t)startAddress;
     entry(parameter);
 
-    // execute TLS callback list after call function.
+    // execute TLS callback list before exit thread.
     if (loader->IsDLL)
     {
         pe_dll_main(DLL_THREAD_DETACH, false);
     } else {
         ldr_tls_callback(DLL_THREAD_DETACH);
     }
+
+    loader->ExitThread(0);
 }
 
 __declspec(noinline)
@@ -1156,6 +1163,12 @@ static void hook_ExitProcess(UINT uExitCode)
     ldr_tls_callback(DLL_PROCESS_DETACH);
 
     loader->ExitProcess(uExitCode);
+}
+
+__declspec(noinline)
+static void hook_msvcrt_exit(int exitcode)
+{
+    hook_ExitProcess((UINT)exitcode);
 }
 
 __declspec(noinline)
@@ -1274,15 +1287,16 @@ uint LDR_Execute()
         return 0x1001;
     }
 
+    bool success = true;
+
     if (is_running())
     {
-        return 0x0000;
+        goto skip;
     }
 
     // recovery PE image from backup for process data like global variable
     mem_copy((void*)loader->PEImage, loader->PEBackup, loader->ImageSize);
 
-    bool success = true;
     for (;;)
     {
         // initialize exit code mutex
@@ -1319,6 +1333,7 @@ uint LDR_Execute()
         set_running(true);
     }
 
+skip:
     if (!ldr_unlock())
     {
         return 0x1002;
@@ -1339,12 +1354,11 @@ errno LDR_Exit()
         return ERR_LOADER_LOCK;
     }
 
-    if (!is_running())
+    errno errno = NO_ERROR;
+    if (is_running())
     {
-        return NO_ERROR;
+        errno = ldr_exit_process();   
     }
-
-    errno errno = ldr_exit_process();
 
     if (!ldr_unlock())
     {
@@ -1365,10 +1379,13 @@ errno LDR_Destroy()
 
     errno err = NO_ERROR;
 
-    errno errep = ldr_exit_process();
-    if (errep != NO_ERROR && err == NO_ERROR)
+    if (is_running())
     {
-        err = errep;
+        errno errep = ldr_exit_process();
+        if (errep != NO_ERROR && err == NO_ERROR)
+        {
+            err = errep;
+        }
     }
 
     if (!loader->Config.NotEraseInstruction)
