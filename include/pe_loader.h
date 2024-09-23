@@ -30,11 +30,11 @@ typedef struct {
     // wait main thread exit if it is a exe image
     bool WaitMain;
 
-    // adjust current memory page protect for test
-    bool AdjustProtect;
-
     // not erase instructions after call functions about Init or Exit
     bool NotEraseInstruction;
+
+    // adjust current memory page protect
+    bool NotAdjustProtect;
 } PELoader_Cfg;
 
 typedef struct {
