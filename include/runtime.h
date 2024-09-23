@@ -6,7 +6,9 @@
 #include "hash_api.h"
 #include "errno.h"
 
-#define OPTION_STUB_SIZE 64
+// about runtime options at the shellcode tail.
+#define OPTION_STUB_SIZE  64
+#define OPTION_STUB_MAGIC 0xFC
 
 #define OPT_OFFSET_NOT_ERASE_INSTRUCTION    1
 #define OPT_OFFSET_NOT_ADJUST_PROTECT       2
