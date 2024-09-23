@@ -7,8 +7,8 @@
 #define BANNER_END_SIZE   11 // strlen("Test Passed")
 #define BANNER_FAIL_SIZE  11 // strlen("Test Failed")
 
-static printBannerBegin(byte* name, uint len);
-static printBannerEnd  (byte* name, uint len, bool pass);
+static void printBannerBegin(byte* name, uint len);
+static void printBannerEnd  (byte* name, uint len, bool pass);
 
 int __cdecl main()
 {
@@ -22,7 +22,7 @@ int __cdecl main()
             maxNameLen = len;
         }
     }
-    // ================TestHashAPI begin================
+    // ================TestFunction begin================
     uint bannerLen = (uint)16 + BANNER_END_SIZE + maxNameLen + 16;
 
     // run unit tests
@@ -47,7 +47,7 @@ int __cdecl main()
     return 0;
 }
 
-static printBannerBegin(byte* name, uint len)
+static void printBannerBegin(byte* name, uint len)
 {
     uint padLen = ( len - BANNER_BEGIN_SIZE - strlen_a(name)) / 2;
     bool equal  = ( len - BANNER_BEGIN_SIZE - strlen_a(name)) % 2 == 0;
@@ -70,7 +70,7 @@ static printBannerBegin(byte* name, uint len)
     printf_s("\n");
 }
 
-static printBannerEnd(byte* name, uint len, bool pass)
+static void printBannerEnd(byte* name, uint len, bool pass)
 {
     uint padLen = ( len - BANNER_END_SIZE - strlen_a(name)) / 2;
     bool equal  = ( len - BANNER_END_SIZE - strlen_a(name)) % 2 == 0;
