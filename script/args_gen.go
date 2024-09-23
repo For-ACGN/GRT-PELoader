@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/RSSU-Shellcode/RT-Argument"
+	"github.com/RSSU-Shellcode/GRT-Config/argument"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 		make([]byte, 4),                      // std error handle
 		{0x01},                               // wait main
 	}
-	stub, err := argument.Encode(args)
+	stub, err := argument.Encode(args...)
 	checkError(err)
 
 	fmt.Println("============x86============")
@@ -35,7 +35,7 @@ func main() {
 		make([]byte, 8),                      // std error handle
 		{0x01},                               // wait main
 	}
-	stub, err = argument.Encode(args)
+	stub, err = argument.Encode(args...)
 	checkError(err)
 
 	fmt.Println("============x64============")
