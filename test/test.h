@@ -2,9 +2,11 @@
 #define TEST_H
 
 #include "c_types.h"
+#include "runtime.h"
 #include "pe_loader.h"
 
 // define global variables for tests
+Runtime_M*  runtime;
 PELoader_M* pe_loader;
 
 // define unit tests
