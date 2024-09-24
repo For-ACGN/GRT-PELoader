@@ -63,7 +63,7 @@ typedef struct {
 } PELoader;
 
 // PE loader methods
-uint  LDR_Execute();
+errno LDR_Execute();
 errno LDR_Exit(uint exitCode);
 errno LDR_Destroy();
 
@@ -101,12 +101,13 @@ static errno cleanPELoader(PELoader* loader);
 static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
 static void* ldr_GetMethods(byte* module, LPCSTR lpProcName);
 static errno ldr_init_mutex();
+static bool  ldr_copy_image();
 static void  ldr_tls_callback(DWORD dwReason);
 static errno ldr_exit_process(UINT uExitCode);
 static void  ldr_epilogue();
 
 static void pe_entry_point();
-static void pe_dll_main(DWORD dwReason, bool setExitCode);
+static bool pe_dll_main(DWORD dwReason, bool setExitCode);
 static void set_exit_code(uint code);
 static uint get_exit_code();
 static void set_running(bool run);
@@ -247,7 +248,7 @@ static void* allocPELoaderMemPage(PELoader_Cfg* cfg)
         return NULL;
     }
     RandBuf(addr, MAIN_MEM_PAGE_SIZE);
-    dbg_log("[PE Loader]", "Main Page: 0x%zX", addr);
+    dbg_log("[PE Loader]", "Main Page:  0x%zX", addr);
     return addr;
 }
 
@@ -408,10 +409,6 @@ static errno loadPEImage(PELoader* loader)
     if (!mapSections(loader))
     {
         return ERR_LOADER_MAP_SECTIONS;
-    }
-    if (!processImport(loader))
-    {
-        return ERR_LOADER_PROCESS_IMPORT;
     }
     if (!fixRelocTable(loader))
     {
@@ -658,7 +655,6 @@ static bool recoverPageProtect(PELoader* loader, DWORD protect)
     return loader->VirtualProtect((void*)begin, size, protect, &old);
 }
 
-
 static bool processImport(PELoader* loader)
 {
     uintptr peImage = loader->PEImage;
@@ -728,7 +724,6 @@ static bool processImport(PELoader* loader)
     }
     return true;
 }
-
 
 static errno cleanPELoader(PELoader* loader)
 {
@@ -953,6 +948,21 @@ static errno ldr_init_mutex()
     return NO_ERROR;
 }
 
+static bool ldr_copy_image()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    if (loader->WaitForSingleObject(loader->StatusMu, INFINITE) != WAIT_OBJECT_0)
+    {
+        return false;
+    }
+
+    // recovery PE image from backup for process data like global variable
+    mem_copy((void*)loader->PEImage, loader->PEBackup, loader->ImageSize);
+
+    return loader->ReleaseMutex(loader->StatusMu);
+}
+
 __declspec(noinline)
 static void ldr_tls_callback(DWORD dwReason)
 {
@@ -996,7 +1006,7 @@ static errno ldr_exit_process(UINT uExitCode)
     // make callback about DLL_PROCESS_DETACH
     if (loader->IsDLL)
     {
-        pe_dll_main(DLL_PROCESS_DETACH, true); // TODO prevent execute twice
+        pe_dll_main(DLL_PROCESS_DETACH, true);
     }
 
     // call ExitProcess for terminate all threads
@@ -1005,13 +1015,14 @@ static errno ldr_exit_process(UINT uExitCode)
     {
         // create a thread for call ExitProcess
         void* addr = GetFuncAddr(&hook_ExitProcess);
-        HANDLE hThread = loader->CreateThread(NULL, 0, addr, uExitCode, 0, NULL);
+        void* para = (LPVOID)(uExitCode);
+        HANDLE hThread = loader->CreateThread(NULL, 0, addr, para, 0, NULL);
         if (hThread == NULL)
         {
-            errno = ERR_LOADER_CREATE_THREAD;
+            errno = ERR_LOADER_CREATE_EXIT_THREAD;
             break;
         }
-        // wait thread exit
+        // wait exit process thread exit
         loader->WaitForSingleObject(hThread, INFINITE);
         loader->CloseHandle(hThread);
         break;
@@ -1027,7 +1038,7 @@ static LPSTR hook_GetCommandLineA()
     dbg_log("[PE Loader]", "GetCommandLineA");
 
     // try to get it from config
-    LPSTR cmdLine = loader->Config.CommandLine;
+    LPSTR cmdLine = loader->Config.CommandLineA;
     if (cmdLine != NULL)
     {
         return cmdLine;
@@ -1043,7 +1054,7 @@ static LPWSTR hook_GetCommandLineW()
     dbg_log("[PE Loader]", "GetCommandLineW");
 
     // try to get it from config
-    LPWSTR cmdLine = loader->Config.CommandLine;
+    LPWSTR cmdLine = loader->Config.CommandLineW;
     if (cmdLine != NULL)
     {
         return cmdLine;
@@ -1210,23 +1221,21 @@ static void pe_entry_point()
     // call EntryPoint usually is main.
     uint exitCode = ((uint(*)())(loader->EntryPoint))();
 
-    // execute TLS callback list after call EntryPoint.
-    ldr_tls_callback(DLL_PROCESS_DETACH);
-
     // exit process
     hook_ExitProcess(exitCode);
 }
 
 __declspec(noinline)
-static void pe_dll_main(DWORD dwReason, bool setExitCode)
+static bool pe_dll_main(DWORD dwReason, bool setExitCode)
 {
     PELoader* loader = getPELoaderPointer();
 
+    // call dll main function
     DllMain_t dllMain = (DllMain_t)(loader->EntryPoint);
     HMODULE   hModule = (HMODULE)(loader->PEImage);
-    // call dll main function
+    bool retval = dllMain(hModule, dwReason, NULL);
     uint exitCode;
-    if (dllMain(hModule, dwReason, NULL))
+    if (retval)
     {
         exitCode = 0;
     } else {
@@ -1236,9 +1245,9 @@ static void pe_dll_main(DWORD dwReason, bool setExitCode)
     {
         set_exit_code(exitCode);
     }
-
     // execute TLS callback list after call DllMain.
     ldr_tls_callback(dwReason);
+    return retval;
 }
 
 static void set_exit_code(uint code)
@@ -1273,6 +1282,7 @@ static uint get_exit_code()
     return code;
 }
 
+__declspec(noinline)
 static void set_running(bool run)
 {
     PELoader* loader = getPELoaderPointer();
@@ -1287,6 +1297,7 @@ static void set_running(bool run)
     loader->ReleaseMutex(loader->StatusMu);
 }
 
+__declspec(noinline)
 static bool is_running()
 {
     PELoader* loader = getPELoaderPointer();
@@ -1306,73 +1317,75 @@ static bool is_running()
 }
 
 __declspec(noinline)
-uint LDR_Execute()
+errno LDR_Execute()
 {
     PELoader* loader = getPELoaderPointer();
 
     if (!ldr_lock())
     {
-        return 0x1001;
+        return ERR_LOADER_LOCK;
     }
 
-    bool success = true;
+    errno errno = NO_ERROR;
 
     if (is_running())
     {
         goto skip;
     }
 
-    // recovery PE image from backup for process data like global variable
-    // TODO add a lock for sync data
-    mem_copy((void*)loader->PEImage, loader->PEBackup, loader->ImageSize);
-
     for (;;)
     {
-        // initialize exit code mutex
-        if (ldr_init_mutex() != NO_ERROR)
+        errno = ldr_init_mutex();
+        if (errno != NO_ERROR)
         {
-            success = false;
+            break;
+        }
+        if (!ldr_copy_image())
+        {
+            errno = ERR_LOADER_COPY_PE_IMAGE;
+            break;
+        }
+        // load library and fix function address
+        if (!processImport(loader))
+        {
+            errno = ERR_LOADER_PROCESS_IMPORT;
             break;
         }
         // make callback about DLL_PROCESS_DETACH
         if (loader->IsDLL)
         {
-            pe_dll_main(DLL_PROCESS_ATTACH, true);
+            if (!pe_dll_main(DLL_PROCESS_ATTACH, true))
+            {
+                errno = ERR_LOADER_DLL_MAIN;
+            }
             break;
         }
         // create thread at entry point
+        set_running(true);
         void* addr = GetFuncAddr(&pe_entry_point);
         HANDLE hThread = loader->CreateThread(NULL, 0, addr, NULL, 0, NULL);
         if (hThread == NULL)
         {
-            success = false;
+            errno = ERR_LOADER_CREATE_MAIN_THREAD;
+            set_running(false);
             break;
         }
         // wait main thread exit
         if (loader->Config.WaitMain)
         {
             loader->WaitForSingleObject(hThread, INFINITE);
+            set_running(false);
         }
         loader->CloseHandle(hThread);
         break;
     }
 
-    if (success)
-    {
-        set_running(true);
-    }
-
 skip:
     if (!ldr_unlock())
     {
-        return 0x1002;
+        return ERR_LOADER_UNLOCK;
     }
-
-    if (!success)
-    {
-        return 0x1003;
-    }
-    return get_exit_code();
+    return errno;
 }
 
 __declspec(noinline)
@@ -1410,10 +1423,10 @@ errno LDR_Destroy()
 
     if (is_running())
     {
-        errno errep = ldr_exit_process(1);
-        if (errep != NO_ERROR && err == NO_ERROR)
+        errno eep = ldr_exit_process(0);
+        if (eep != NO_ERROR && err == NO_ERROR)
         {
-            err = errep;
+            err = eep;
         }
     }
 
