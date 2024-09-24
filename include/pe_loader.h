@@ -6,8 +6,8 @@
 #include "hash_api.h"
 #include "errno.h"
 
-typedef uint  (*Execute_t)();
-typedef errno (*Exit_t)();
+typedef errno (*Execute_t)();
+typedef errno (*Exit_t)(uint exitCode);
 typedef errno (*Destroy_t)();
 
 typedef struct {
@@ -19,7 +19,8 @@ typedef struct {
 
     // for hook GetCommandLineA and GetCommandLineW,
     // if it is NULL, call original GetCommandLine
-    void* CommandLine;
+    void* CommandLineA;
+    void* CommandLineW;
 
     // set standard handles for hook GetStdHandle,
     // if them are NULL, call original GetStdHandle
