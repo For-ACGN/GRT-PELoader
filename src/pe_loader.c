@@ -23,6 +23,7 @@ typedef struct {
     VirtualLock_t           VirtualLock;
     VirtualUnlock_t         VirtualUnlock;
     LoadLibraryA_t          LoadLibraryA;
+    FreeLibrary_t           FreeLibrary;
     GetProcAddress_t        GetProcAddress;
     CreateThread_t          CreateThread;
     ExitThread_t            ExitThread;
@@ -63,7 +64,7 @@ typedef struct {
 
 // PE loader methods
 uint  LDR_Execute();
-errno LDR_Exit();
+errno LDR_Exit(uint exitCode);
 errno LDR_Destroy();
 
 // hard encoded address in getPELoaderPointer for replacement
@@ -101,7 +102,7 @@ static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
 static void* ldr_GetMethods(byte* module, LPCSTR lpProcName);
 static errno ldr_init_mutex();
 static void  ldr_tls_callback(DWORD dwReason);
-static errno ldr_exit_process();
+static errno ldr_exit_process(UINT uExitCode);
 static void  ldr_epilogue();
 
 static void pe_entry_point();
@@ -264,6 +265,7 @@ static bool initPELoaderAPI(PELoader* loader)
         { 0xFAC73FAE41C0C2C8, 0xE7A0EE8E5CBAB70B }, // VirtualLock
         { 0x17C8D1591CA0850F, 0x64458856130C1CE7 }, // VirtualUnlock
         { 0x90BD05BA72DD948C, 0x253672CEAE439BB6 }, // LoadLibraryA
+        { 0x0322C392AB9AE610, 0x2CF3559162E79E91 }, // FreeLibrary
         { 0xF4E6DE881A59F6A0, 0xBC2E958CCBE70AA2 }, // GetProcAddress
         { 0x62E83480AE0AAFC7, 0x86C0AECD3EF92256 }, // CreateThread
         { 0xE0846C4ED5129CD3, 0x8C8C31D65FAFC1C4 }, // ExitThread
@@ -285,6 +287,7 @@ static bool initPELoaderAPI(PELoader* loader)
         { 0x54914D83, 0xA9606A64 }, // VirtualLock
         { 0xCEDF8C40, 0x6D73766F }, // VirtualUnlock
         { 0x3DAF1E96, 0xD7E436F3 }, // LoadLibraryA
+        { 0x2BC5BE30, 0xC2B2D69A }, // FreeLibrary
         { 0xE971801A, 0xEC6F6D90 }, // GetProcAddress
         { 0xD1AFE117, 0xDA772D98 }, // CreateThread
         { 0xC4471F00, 0x6B6811C7 }, // ExitThread
@@ -315,26 +318,33 @@ static bool initPELoaderAPI(PELoader* loader)
     loader->VirtualLock           = list[0x03].proc;
     loader->VirtualUnlock         = list[0x04].proc;
     loader->LoadLibraryA          = list[0x05].proc;
-    loader->GetProcAddress        = list[0x06].proc;
-    loader->CreateThread          = list[0x07].proc;
-    loader->ExitThread            = list[0x08].proc;
-    loader->FlushInstructionCache = list[0x09].proc;
-    loader->CreateMutexA          = list[0x0A].proc;
-    loader->ReleaseMutex          = list[0x0B].proc;
-    loader->WaitForSingleObject   = list[0x0C].proc;
-    loader->CloseHandle           = list[0x0D].proc;
-    loader->GetCommandLineA       = list[0x0E].proc;
-    loader->GetCommandLineW       = list[0x0F].proc;
-    loader->GetStdHandle          = list[0x10].proc;
-    loader->ExitProcess           = list[0x11].proc;
+    loader->FreeLibrary           = list[0x06].proc;
+    loader->GetProcAddress        = list[0x07].proc;
+    loader->CreateThread          = list[0x08].proc;
+    loader->ExitThread            = list[0x09].proc;
+    loader->FlushInstructionCache = list[0x0A].proc;
+    loader->CreateMutexA          = list[0x0B].proc;
+    loader->ReleaseMutex          = list[0x0C].proc;
+    loader->WaitForSingleObject   = list[0x0D].proc;
+    loader->CloseHandle           = list[0x0E].proc;
+    loader->GetCommandLineA       = list[0x0F].proc;
+    loader->GetCommandLineW       = list[0x10].proc;
+    loader->GetStdHandle          = list[0x11].proc;
+    loader->ExitProcess           = list[0x12].proc;
     return true;
 }
 
 static bool lockMainMemPage(PELoader* loader)
 {
-    return loader->VirtualLock(loader->MainMemPage, 0);
+#ifndef NO_RUNTIME
+    if (!loader->VirtualLock(loader->MainMemPage, 0))
+    {
+        return false;
+    }
+#endif // NO_RUNTIME
+    return true;
 }
-    
+
 // CANNOT merge updatePELoaderPointer and recoverPELoaderPointer
 // to one function with two arguments, otherwise the compiler
 // will generate the incorrect instructions.
@@ -474,12 +484,14 @@ static bool mapSections(PELoader* loader)
     }
     loader->PEImage = (uintptr)mem;
     // lock memory region with special argument for reuse PE image
+#ifndef NO_RUNTIME
     if (!loader->VirtualLock(mem, 0))
     {
         return false;
     }
-    uintptr peImage = (uintptr)mem;
+#endif // NO_RUNTIME
     // map PE image sections to the memory
+    uintptr peImage   = (uintptr)mem;
     uintptr imageAddr = (uintptr)(loader->Config.Image);
     uint32  peOffset  = loader->PEOffset;
     uint16  optHeaderSize = loader->OptHeaderSize;
@@ -496,76 +508,6 @@ static bool mapSections(PELoader* loader)
     }
     // update EntryPoint absolute address
     loader->EntryPoint += peImage;
-    return true;
-}
-
-static bool processImport(PELoader* loader)
-{
-    uintptr peImage = loader->PEImage;
-    uintptr dataDir = loader->DataDir;
-    uintptr offset  = dataDir + IMAGE_DIRECTORY_ENTRY_IMPORT * PE_DATA_DIRECTORY_SIZE;
-    uintptr importTable = peImage + *(uint32*)(offset);
-    uint32  tableSize   = *(uint32*)(offset + 4);
-    // check need import
-    if (tableSize == 0)
-    {
-        return true;
-    }
-    // load library and fix function address
-    Image_ImportDescriptor* import;
-    for (;;)
-    {
-        import = (Image_ImportDescriptor*)(importTable);
-        if (import->Name == 0)
-        {
-            break;
-        }
-        LPCSTR  dllName = (LPCSTR)(peImage + import->Name);
-        HMODULE hModule = loader->LoadLibraryA(dllName);
-        if (hModule == NULL)
-        {
-            return false;
-        }
-        dbg_log("[PE Loader]", "LoadLibrary: %s", dllName);
-        uintptr srcThunk;
-        uintptr dstThunk;
-        if (import->OriginalFirstThunk != 0)
-        {
-            srcThunk = peImage + import->OriginalFirstThunk;
-        } else {
-            srcThunk = peImage + import->FirstThunk;
-        }
-        dstThunk = peImage + import->FirstThunk;
-        // fix function address
-        for (;;)
-        {
-            uintptr value = *(uintptr*)srcThunk;
-            if (value == 0)
-            {
-                break;
-            }
-            LPCSTR procName;
-            #ifdef _WIN64
-            if ((value & IMAGE_ORDINAL_FLAG64) != 0)
-            #elif _WIN32
-            if ((value & IMAGE_ORDINAL_FLAG32) != 0)
-            #endif
-            {
-                procName = (LPCSTR)(value&0xFFFF);
-            } else {
-                procName = (LPCSTR)(peImage + value + 2);
-            }
-            void* proc = ldr_GetProcAddress(hModule, procName);
-            if (proc == NULL)
-            {
-                return false;
-            }
-            *(uintptr*)dstThunk = (uintptr)proc;
-            srcThunk += sizeof(uintptr);
-            dstThunk += sizeof(uintptr);
-        }
-        importTable += sizeof(Image_ImportDescriptor);
-    }
     return true;
 }
 
@@ -655,11 +597,13 @@ static bool backupPEImage(PELoader* loader)
     loader->PEBackup = mem;
     // copy mapped PE image
     mem_copy(mem, (void*)(loader->PEImage), loader->ImageSize);
+#ifndef NO_RUNTIME
     // lock memory region with special argument for reuse PE image
     if (!loader->VirtualLock(mem, 0))
     {
         return false;
     }
+#endif // NO_RUNTIME
     return true;
 }
 
@@ -714,11 +658,84 @@ static bool recoverPageProtect(PELoader* loader, DWORD protect)
     return loader->VirtualProtect((void*)begin, size, protect, &old);
 }
 
+
+static bool processImport(PELoader* loader)
+{
+    uintptr peImage = loader->PEImage;
+    uintptr dataDir = loader->DataDir;
+    uintptr offset  = dataDir + IMAGE_DIRECTORY_ENTRY_IMPORT * PE_DATA_DIRECTORY_SIZE;
+    uintptr importTable = peImage + *(uint32*)(offset);
+    uint32  tableSize   = *(uint32*)(offset + 4);
+    // check need import
+    if (tableSize == 0)
+    {
+        return true;
+    }
+    // load library and fix function address
+    Image_ImportDescriptor* import;
+    for (;;)
+    {
+        import = (Image_ImportDescriptor*)(importTable);
+        if (import->Name == 0)
+        {
+            break;
+        }
+        LPCSTR  dllName = (LPCSTR)(peImage + import->Name);
+        HMODULE hModule = loader->LoadLibraryA(dllName);
+        if (hModule == NULL)
+        {
+            return false;
+        }
+        dbg_log("[PE Loader]", "LoadLibrary: %s", dllName);
+        uintptr srcThunk;
+        uintptr dstThunk;
+        if (import->OriginalFirstThunk != 0)
+        {
+            srcThunk = peImage + import->OriginalFirstThunk;
+        } else {
+            srcThunk = peImage + import->FirstThunk;
+        }
+        dstThunk = peImage + import->FirstThunk;
+        // fix function address
+        for (;;)
+        {
+            uintptr value = *(uintptr*)srcThunk;
+            if (value == 0)
+            {
+                break;
+            }
+            LPCSTR procName;
+            #ifdef _WIN64
+            if ((value & IMAGE_ORDINAL_FLAG64) != 0)
+            #elif _WIN32
+            if ((value & IMAGE_ORDINAL_FLAG32) != 0)
+            #endif
+            {
+                procName = (LPCSTR)(value&0xFFFF);
+            } else {
+                procName = (LPCSTR)(peImage + value + 2);
+            }
+            void* proc = ldr_GetProcAddress(hModule, procName);
+            if (proc == NULL)
+            {
+                return false;
+            }
+            *(uintptr*)dstThunk = (uintptr)proc;
+            srcThunk += sizeof(uintptr);
+            dstThunk += sizeof(uintptr);
+        }
+        importTable += sizeof(Image_ImportDescriptor);
+    }
+    return true;
+}
+
+
 static errno cleanPELoader(PELoader* loader)
 {
     errno errno = NO_ERROR;
 
     CloseHandle_t   closeHandle   = loader->CloseHandle;
+    FreeLibrary_t   freeLibrary   = loader->FreeLibrary;
     VirtualUnlock_t virtualUnlock = loader->VirtualUnlock;
     VirtualFree_t   virtualFree   = loader->VirtualFree;
 
@@ -742,6 +759,17 @@ static errno cleanPELoader(PELoader* loader)
         }
     }
 
+#ifndef NO_RUNTIME
+    if (freeLibrary != NULL)
+    {
+        // free all tracked librarys
+        if (!freeLibrary(NULL) && errno == NO_ERROR)
+        {
+            errno = ERR_LOADER_FREE_LIBRARY;
+        }
+    }
+#endif // NO_RUNTIME
+
     void* memPage  = loader->MainMemPage;
     void* peImage  = (void*)(loader->PEImage);
     void* peBackup = loader->PEBackup;
@@ -751,7 +779,7 @@ static errno cleanPELoader(PELoader* loader)
         // unlock memory page for PE image
         if (peImage != NULL)
         {
-            if (!loader->VirtualUnlock(peImage, 0) && errno == NO_ERROR)
+            if (!virtualUnlock(peImage, 0) && errno == NO_ERROR)
             {
                 errno = ERR_LOADER_UNLOCK_PE_IMAGE;
             }
@@ -759,7 +787,7 @@ static errno cleanPELoader(PELoader* loader)
         // unlock memory page for PE image backup
         if (peBackup != NULL)
         {
-            if (!loader->VirtualUnlock(peBackup, 0) && errno == NO_ERROR)
+            if (!virtualUnlock(peBackup, 0) && errno == NO_ERROR)
             {
                 errno = ERR_LOADER_UNLOCK_BACKUP;
             }
@@ -767,7 +795,7 @@ static errno cleanPELoader(PELoader* loader)
         // unlock main memory page for structure
         if (memPage != NULL)
         {
-            if (!loader->VirtualUnlock(memPage, 0) && errno == NO_ERROR)
+            if (!virtualUnlock(memPage, 0) && errno == NO_ERROR)
             {
                 errno = ERR_LOADER_UNLOCK_MAIN_MEM;
             }
@@ -961,7 +989,7 @@ static void ldr_tls_callback(DWORD dwReason)
     }
 }
 
-static errno ldr_exit_process()
+static errno ldr_exit_process(UINT uExitCode)
 {
     PELoader* loader = getPELoaderPointer();
 
@@ -977,7 +1005,7 @@ static errno ldr_exit_process()
     {
         // create a thread for call ExitProcess
         void* addr = GetFuncAddr(&hook_ExitProcess);
-        HANDLE hThread = loader->CreateThread(NULL, 0, addr, NULL, 0, NULL);
+        HANDLE hThread = loader->CreateThread(NULL, 0, addr, uExitCode, 0, NULL);
         if (hThread == NULL)
         {
             errno = ERR_LOADER_CREATE_THREAD;
@@ -1295,6 +1323,7 @@ uint LDR_Execute()
     }
 
     // recovery PE image from backup for process data like global variable
+    // TODO add a lock for sync data
     mem_copy((void*)loader->PEImage, loader->PEBackup, loader->ImageSize);
 
     for (;;)
@@ -1347,7 +1376,7 @@ skip:
 }
 
 __declspec(noinline)
-errno LDR_Exit()
+errno LDR_Exit(uint exitCode)
 {
     if (!ldr_lock())
     {
@@ -1357,7 +1386,7 @@ errno LDR_Exit()
     errno errno = NO_ERROR;
     if (is_running())
     {
-        errno = ldr_exit_process();   
+        errno = ldr_exit_process(exitCode);
     }
 
     if (!ldr_unlock())
@@ -1381,7 +1410,7 @@ errno LDR_Destroy()
 
     if (is_running())
     {
-        errno errep = ldr_exit_process();
+        errno errep = ldr_exit_process(1);
         if (errep != NO_ERROR && err == NO_ERROR)
         {
             err = errep;
