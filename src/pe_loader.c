@@ -147,7 +147,7 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     uintptr moduleAddr = address + 2000 + RandUintN(address, 128);
     // initialize structure
     PELoader* loader = (PELoader*)loaderAddr;
-    mem_clean(loader, sizeof(PELoader));
+    mem_init(loader, sizeof(PELoader));
     // store config and context
     loader->Config = *cfg;
     loader->MainMemPage = memPage;
@@ -242,13 +242,14 @@ static void* allocPELoaderMemPage(PELoader_Cfg* cfg)
     {
         return NULL;
     }
-    LPVOID addr = virtualAlloc(0, MAIN_MEM_PAGE_SIZE, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    SIZE_T size = MAIN_MEM_PAGE_SIZE + (1 + RandUintN(0, 16)) * 4096;
+    LPVOID addr = virtualAlloc(NULL, size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     if (addr == NULL)
     {
         return NULL;
     }
-    RandBuf(addr, MAIN_MEM_PAGE_SIZE);
-    dbg_log("[PE Loader]", "Main Page:  0x%zX", addr);
+    RandBuf(addr, (int64)size);
+    dbg_log("[PE Loader]", "Main Memory Page:  0x%zX", addr);
     return addr;
 }
 
@@ -474,7 +475,7 @@ static bool mapSections(PELoader* loader)
     uint32 size = loader->ImageSize;
     size += (uint32)(RandUintN(seed, 128) * 4096);
     // allocate memory for write PE image
-    void* mem = loader->VirtualAlloc(0, size, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    void* mem = loader->VirtualAlloc(NULL, size, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (mem == NULL)
     {
         return false;
@@ -520,6 +521,7 @@ static bool fixRelocTable(PELoader* loader)
     {
         return true;
     }
+    void*  tableAddr  = (void*)relocTable;
     uint64 addrOffset = (int64)(loader->PEImage) - (int64)(loader->ImageBase);
     Image_BaseRelocation* baseReloc;
     for (;;)
@@ -558,6 +560,8 @@ static bool fixRelocTable(PELoader* loader)
         }
         relocTable += baseReloc->SizeOfBlock;
     }
+    // destroy table for prevent extract raw PE image
+    RandBuf(tableAddr, tableSize);
     return true;
 }
 
@@ -575,6 +579,8 @@ static bool initTLSCallback(PELoader* loader)
     }
     Image_TLSDirectory* tls = (Image_TLSDirectory*)(tlsTable);
     loader->TLSList = (TLSCallback_t*)(tls->AddressOfCallBacks);
+    // destroy table for prevent extract raw PE image
+    RandBuf((byte*)tlsTable, tableSize);
     return true;
 }
 
@@ -586,7 +592,7 @@ static bool backupPEImage(PELoader* loader)
     uint32 size = loader->ImageSize;
     size += (uint32)(RandUintN(seed, 128) * 4096);
     // allocate memory for write PE image
-    void* mem = loader->VirtualAlloc(0, size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    void* mem = loader->VirtualAlloc(NULL, size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     if (mem == NULL)
     {
         return false;
@@ -835,7 +841,7 @@ static errno cleanPELoader(PELoader* loader)
 #pragma optimize("", off)
 static PELoader* getPELoaderPointer()
 {
-    uint pointer = PE_LOADER_POINTER;
+    uintptr pointer = PE_LOADER_POINTER;
     return (PELoader*)(pointer);
 }
 #pragma optimize("", on)
@@ -869,10 +875,10 @@ void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
         return loader->GetProcAddress(hModule, lpProcName);
     }
     dbg_log("[PE Loader]", "GetProcAddress: %s", lpProcName);
-    // use "mem_clean" for prevent incorrect compiler
+    // use "mem_init" for prevent incorrect compiler
     // optimize and generate incorrect shellcode
     byte module[MAX_PATH];
-    mem_clean(&module, sizeof(module));
+    mem_init(module, sizeof(module));
     // get module file name
     if (GetModuleFileName(hModule, module, sizeof(module)) == 0)
     {
@@ -1117,7 +1123,7 @@ static HANDLE hook_CreateThread(
     dbg_log("[PE Loader]", "CreateThread: 0x%zX", lpStartAddress);
 
     // alloc memory for store actual StartAddress and Parameter
-    LPVOID para = loader->VirtualAlloc(0, 4096, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    LPVOID para = loader->VirtualAlloc(NULL, 4096, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     if (para == NULL)
     {
         return NULL;
