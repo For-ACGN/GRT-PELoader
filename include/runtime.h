@@ -15,28 +15,17 @@
 #define OPT_OFFSET_NOT_TRACK_CURRENT_THREAD 3
 
 // for generic shellcode development.
-typedef void (*Sleep_t)(uint32 milliseconds);
-
-typedef void   (*RandBuf_t)(byte* buf, int64 size);
-typedef bool   (*RandBool_t)(uint64 seed);
-typedef int64  (*RandInt64_t)(uint64 seed);
-typedef uint64 (*RandUint64_t)(uint64 seed);
-typedef int64  (*RandInt64N_t)(uint64 seed, int64 n);
-typedef uint64 (*RandUint64N_t)(uint64 seed, uint64 n);
-
-typedef void (*Encrypt_t)(byte* buf, uint size, byte* key, byte* iv);
-typedef void (*Decrypt_t)(byte* buf, uint size, byte* key, byte* iv);
-
-typedef uint (*Compress_t)(void* dst, void* src);
-typedef uint (*Decompress_t)(void* dst, void* src);
-
 typedef void* (*MemAlloc_t)(uint size);
-typedef void* (*MemRealloc_t)(void* address, uint size);
-typedef bool  (*MemFree_t)(void* address);
+typedef void* (*MemCalloc_t)(uint num, uint size);
+typedef void* (*MemRealloc_t)(void* ptr, uint size);
+typedef void  (*MemFree_t)(void* ptr);
 
+// about thread module
 typedef HANDLE (*ThdNew_t)(void* address, void* parameter, bool track);
 typedef void   (*ThdExit_t)();
+typedef void   (*Sleep_t)(uint32 milliseconds);
 
+// about argument store
 typedef bool (*GetArgValue_t)(uint index, void* value, uint32* size);
 typedef bool (*GetArgPointer_t)(uint index, void** pointer, uint32* size);
 typedef bool (*EraseArgument_t)(uint index);
@@ -50,6 +39,22 @@ typedef void (*EraseAllArgs_t)();
 typedef void* (*GetProcAddressByName_t)(HMODULE hModule, LPCSTR lpProcName, bool hook);
 typedef void* (*GetProcAddressByHash_t)(uint hash, uint key, bool hook);
 typedef void* (*GetProcAddressOriginal_t)(HMODULE hModule, LPCSTR lpProcName);
+
+// about random module
+typedef void   (*RandBuf_t)(byte* buf, int64 size);
+typedef bool   (*RandBool_t)(uint64 seed);
+typedef int64  (*RandInt64_t)(uint64 seed);
+typedef uint64 (*RandUint64_t)(uint64 seed);
+typedef int64  (*RandInt64N_t)(uint64 seed, int64 n);
+typedef uint64 (*RandUint64N_t)(uint64 seed, uint64 n);
+
+// about crypto module
+typedef void (*Encrypt_t)(byte* buf, uint size, byte* key, byte* iv);
+typedef void (*Decrypt_t)(byte* buf, uint size, byte* key, byte* iv);
+
+// about compress module
+typedef uint (*Compress_t)(void* dst, void* src);
+typedef uint (*Decompress_t)(void* dst, void* src);
 
 // runtime core methods
 // it is NOT recommended use "Hide" and "Recover", these functions
@@ -68,19 +73,50 @@ typedef struct {
     // not erase runtime instructions after call Runtime_M.Exit
     bool NotEraseInstruction;
 
-    // not adjust current memory page protect for erase runtime
+    // not adjust current memory page protect for erase runtime.
     bool NotAdjustProtect;
 
-    // track current thread for some special executable file like Golang
+    // track current thread for test or debug mode.
     bool TrackCurrentThread;
 } Runtime_Opts;
 
 // Runtime_M contains exported runtime methods.
 typedef struct {
-    // misc module
-    FindAPI_t FindAPI;
+    // about hash api
+    FindAPI_t   FindAPI;
+    FindAPI_A_t FindAPI_A;
+    FindAPI_W_t FindAPI_W;
+
+    // library tracker
+    LoadLibraryA_t   LoadLibraryA;
+    LoadLibraryW_t   LoadLibraryW;
+    LoadLibraryExA_t LoadLibraryExA;
+    LoadLibraryExW_t LoadLibraryExW;
+    FreeLibrary_t    FreeLibrary;
+    GetProcAddress_t GetProcAddress;
+
+    // memory tracker
+    MemAlloc_t   MemAlloc;
+    MemCalloc_t  MemCalloc;
+    MemRealloc_t MemRealloc;
+    MemFree_t    MemFree;
+
+    // thread tracker
+    ThdNew_t  NewThread;
+    ThdExit_t ExitThread;
     Sleep_t   Sleep;
 
+    // argument store
+    GetArgValue_t   GetArgValue;
+    GetArgPointer_t GetArgPointer;
+    EraseArgument_t EraseArgument;
+    EraseAllArgs_t  EraseAllArgs;
+
+    // about IAT hooks
+    GetProcAddressByName_t   GetProcAddressByName;
+    GetProcAddressByHash_t   GetProcAddressByHash;
+    GetProcAddressOriginal_t GetProcAddressOriginal;
+    
     // random module
     RandBuf_t     RandBuf;
     RandBool_t    RandBool;
@@ -97,35 +133,7 @@ typedef struct {
     Compress_t   Compress;
     Decompress_t Decompress;
 
-    // library tracker
-    LoadLibraryA_t   LoadLibraryA;
-    LoadLibraryW_t   LoadLibraryW;
-    LoadLibraryExA_t LoadLibraryExA;
-    LoadLibraryExW_t LoadLibraryExW;
-    FreeLibrary_t    FreeLibrary;
-    GetProcAddress_t GetProcAddress;
-
-    // memory tracker
-    MemAlloc_t   MemAlloc;
-    MemRealloc_t MemRealloc;
-    MemFree_t    MemFree;
-
-    // thread tracker
-    ThdNew_t  NewThread;
-    ThdExit_t ExitThread;
-
-    // argument store
-    GetArgValue_t   GetArgValue;
-    GetArgPointer_t GetArgPointer;
-    EraseArgument_t EraseArgument;
-    EraseAllArgs_t  EraseAllArgs;
-
-    // about IAT hooks
-    GetProcAddressByName_t   GetProcAddressByName;
-    GetProcAddressByHash_t   GetProcAddressByHash;
-    GetProcAddressOriginal_t GetProcAddressOriginal;
-    
-    // runtime core
+    // runtime core methods
     SleepHR_t SleepHR;
     Hide_t    Hide;
     Recover_t Recover;
