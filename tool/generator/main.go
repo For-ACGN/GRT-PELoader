@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"debug/pe"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode/utf16"
 
 	"github.com/RSSU-Shellcode/GRT-Config/argument"
 	"github.com/RSSU-Shellcode/GRT-Config/option"
@@ -22,7 +25,7 @@ var (
 )
 
 func init() {
-	// TODO read options
+	option.Flag(&options)
 	flag.StringVar(&tplDir, "tpl", "template", "set shellcode templates directory")
 	flag.StringVar(&pePath, "pe", "", "set input PE file path")
 	flag.StringVar(&cmdLine, "cmd", "", "set command line for exe")
@@ -67,15 +70,31 @@ func main() {
 	checkError(err)
 
 	fmt.Println("encode arguments to stub")
+	var (
+		cmdLineA []byte
+		cmdLineW []byte
+	)
 	if cmdLine != "" {
-		cmdLine += "\x00"
+		peName := filepath.Base(pePath)
+		if strings.Contains(peName, " ") {
+			peName = "\"" + peName + "\""
+		}
+		peName += " "
+		cmdLineA = []byte(peName + cmdLine + "\x00")
+
+		w := utf16.Encode([]rune(peName + cmdLine))
+		cmdLineW = make([]byte, len(w)*2+2)
+		for i := 0; i < len(w); i++ {
+			binary.LittleEndian.PutUint16(cmdLineW[i*2:], w[i])
+		}
 	}
+
 	argWait := make([]byte, 1)
 	if wait {
 		argWait[0] = 1
 	}
 	args := [][]byte{
-		peData, []byte(cmdLine),
+		peData, cmdLineA, cmdLineW,
 		stdHandle, stdHandle, stdHandle,
 		argWait,
 	}
