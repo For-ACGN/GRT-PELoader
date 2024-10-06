@@ -134,6 +134,11 @@ typedef HANDLE (*CreateThread_t)
     LPVOID lpParameter, DWORD dwCreationFlags, DWORD* lpThreadId
 );
 
+typedef void (*ExitThread_t)
+(
+    DWORD dwExitCode
+);
+
 typedef BOOL (*FlushInstructionCache_t)
 (
     HANDLE hProcess, LPCVOID lpBaseAddress, SIZE_T dwSize
