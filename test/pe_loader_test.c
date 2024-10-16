@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include "build.h"
 #include "c_types.h"
 #include "hash_api.h"
 #include "errno.h"
@@ -8,12 +9,14 @@
 
 bool TestInitPELoader()
 {
-    // read PE file
+    // read PE image file
 #ifdef _WIN64
+    FILE* file = fopen("E:\\Temp\\go_amd64.exe", "rb");
     // FILE* file = fopen("testdata\\rust_x64.exe", "rb");
-    FILE* file = fopen("E:\\Temp\\rust.exe", "rb");
+    // FILE* file = fopen("testdata\\go_amd64.exe", "rb");
 #elif _WIN32
-    FILE* file = fopen("testdata\\rust_x86.exe", "rb");
+    FILE* file = fopen("testdata\\go_386.exe", "rb");
+    // FILE* file = fopen("testdata\\rust_x86.exe", "rb");
 #endif
     if (file == NULL)
     {
@@ -56,17 +59,24 @@ bool TestInitPELoader()
         return false;
     }
 
-    LPSTR cmdLine = "loader.exe -p1 123 -p2 \"test\"";
+    LPSTR  cmdLineA =  "loader.exe -p1 123 -p2 \"test\"";
+    LPWSTR cmdLineW = L"loader.exe -p1 123 -p2 \"test\"";
 
     PELoader_Cfg cfg = {
-        .FindAPI = runtime->FindAPI,
 
-        .Image       = buf,
-        .CommandLine = cmdLine,
-        .StdInput    = NULL,
-        .StdOutput   = NULL,
-        .StdError    = NULL,
-        .WaitMain    = false,
+    #ifdef NO_RUNTIME
+        .FindAPI = &FindAPI,
+    #else
+        .FindAPI = runtime->HashAPI.FindAPI,
+    #endif // NO_RUNTIME
+
+        .Image        = buf,
+        .CommandLineA = cmdLineA,
+        .CommandLineW = cmdLineW,
+        .StdInput     = NULL,
+        .StdOutput    = NULL,
+        .StdError     = NULL,
+        .WaitMain     = false,
 
         .NotEraseInstruction = true,
         .NotAdjustProtect    = false,
@@ -93,9 +103,9 @@ bool TestPELoader_Execute()
         printf_s("unexpected exit code: 0x%zX\n", exitCode);
         return false;
     }
-    runtime->Sleep(5000);
+    runtime->Thread.Sleep(50000);
 
-    errno errno = pe_loader->Exit();
+    errno errno = pe_loader->Exit(0);
     if (errno != NO_ERROR)
     {
         printf_s("failed to exit PE loader: 0x%X\n", GetLastErrno());
@@ -117,9 +127,9 @@ bool TestPELoader_Exit()
         printf_s("unexpected exit code: 0x%zX\n", exitCode);
         return false;
     }
-    runtime->Sleep(5000);
+    runtime->Thread.Sleep(5000);
 
-    errno errno = pe_loader->Exit();
+    errno errno = pe_loader->Exit(0);
     if (errno != NO_ERROR)
     {
         printf_s("failed to exit PE loader: 0x%X\n", GetLastErrno());
@@ -141,12 +151,19 @@ bool TestPELoader_Destroy()
         printf_s("unexpected exit code: 0x%zX\n", exitCode);
         return false;
     }
-    runtime->Sleep(5000);
+    runtime->Thread.Sleep(5000);
 
     errno errno = pe_loader->Destroy();
     if (errno != NO_ERROR)
     {
         printf_s("failed to destroy PE loader: 0x%X\n", GetLastErrno());
+        return false;
+    }
+
+    errno = runtime->Core.Exit();
+    if (errno != NO_ERROR)
+    {
+        printf_s("failed to exit runtime: 0x%X\n", GetLastErrno());
         return false;
     }
     return true;
