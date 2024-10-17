@@ -2,21 +2,27 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"os"
+	"unicode/utf16"
 
 	"github.com/RSSU-Shellcode/GRT-Config/argument"
 )
 
 func main() {
+	cmdlineA := "test_x86.exe -arg 1234\x00"
+	cmdlineW := stringToUTF16(cmdlineA)
+
 	args := [][]byte{
-		{0xFF, 0xFF, 0x00, 0x00},             // invalid PE image
-		[]byte("test_x86.exe -arg 1234\x00"), // command line
-		make([]byte, 4),                      // std input handle
-		make([]byte, 4),                      // std output handle
-		make([]byte, 4),                      // std error handle
-		{0x01},                               // wait main
+		{0xFF, 0xFF, 0x00, 0x00}, // invalid PE image
+		[]byte(cmdlineA),         // command line ANSI
+		[]byte(cmdlineW),         // command line Unicode
+		make([]byte, 4),          // std input handle
+		make([]byte, 4),          // std output handle
+		make([]byte, 4),          // std error handle
+		{0x01},                   // wait main
 	}
 	stub, err := argument.Encode(args...)
 	checkError(err)
@@ -28,12 +34,13 @@ func main() {
 	fmt.Println()
 
 	args = [][]byte{
-		{0xFF, 0xFF, 0x00, 0x00},             // invalid PE image
-		[]byte("test_x64.exe -arg 1234\x00"), // command line
-		make([]byte, 8),                      // std input handle
-		make([]byte, 8),                      // std output handle
-		make([]byte, 8),                      // std error handle
-		{0x01},                               // wait main
+		{0xFF, 0xFF, 0x00, 0x00}, // invalid PE image
+		[]byte(cmdlineA),         // command line ANSI
+		[]byte(cmdlineW),         // command line Unicode
+		make([]byte, 8),          // std input handle
+		make([]byte, 8),          // std output handle
+		make([]byte, 8),          // std error handle
+		{0x01},                   // wait main
 	}
 	stub, err = argument.Encode(args...)
 	checkError(err)
@@ -41,6 +48,15 @@ func main() {
 	fmt.Println("============x64============")
 	fmt.Println(dumpBytesHex(stub))
 	fmt.Println("===========================")
+}
+
+func stringToUTF16(s string) string {
+	w := utf16.Encode([]rune(s))
+	output := make([]byte, len(w)*2)
+	for i := 0; i < len(w); i++ {
+		binary.LittleEndian.PutUint16(output[i*2:], w[i])
+	}
+	return string(output)
 }
 
 func dumpBytesHex(b []byte) string {
