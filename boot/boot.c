@@ -29,16 +29,22 @@ errno Boot()
         return GetLastErrno();
     }
 
+    // byte  path[] = { '1', '.', 'e', 'x','e',0x00 };
+    // byte* buf;
+    // int64 size;
+    // runtime->WinFile.ReadFileA(path, &buf, &size);
+
     // load config and initialize PE Loader
     PELoader_Cfg config = {
-        .FindAPI = runtime->FindAPI,
+        .FindAPI = runtime->HashAPI.FindAPI,
 
-        .Image       = NULL,
-        .CommandLine = NULL,
-        .StdInput    = NULL,
-        .StdOutput   = NULL,
-        .StdError    = NULL,
-        .WaitMain    = false,
+        .Image        = NULL,
+        .CommandLineA = NULL,
+        .CommandLineW = NULL,
+        .StdInput     = NULL,
+        .StdOutput    = NULL,
+        .StdError     = NULL,
+        .WaitMain     = false,
 
         .NotEraseInstruction = options.NotEraseInstruction,
         .NotAdjustProtect    = options.NotAdjustProtect,
@@ -60,18 +66,23 @@ errno Boot()
         }
         break;
     }
-    runtime->EraseAllArgs();
+    // runtime->Argument.EraseAll();
     if (err != NO_ERROR || loader == NULL)
     {
-        runtime->Exit();
+        runtime->Core.Exit();
         return err;
     }
 
     // execute PE file
-    uint exitCode = loader->Execute();
+    errno ele = loader->Execute();
+    if (ele != NO_ERROR && err == NO_ERROR)
+    {
+        err = ele;
+    }
+    // TODO it
     if (!config.WaitMain)
     {
-        return (errno)exitCode;
+        return NO_ERROR;
     }
     // destroy pe loader and exit runtime
     errno eld = loader->Destroy();
@@ -79,16 +90,16 @@ errno Boot()
     {
         err = eld;
     }
-    errno ere = runtime->Exit();
+    errno ere = runtime->Core.Exit();
     if (ere != NO_ERROR && err == NO_ERROR)
     {
         err = ere;
     }
     // set exit code from pe image
-    if (exitCode != 0 && err == NO_ERROR)
-    {
-        err = (errno)exitCode;
-    }
+    // if (exitCode != 0 && err == NO_ERROR)
+    // {
+    //     err = (errno)exitCode;
+    // }
     return err;
 }
 
@@ -96,8 +107,8 @@ static errno loadOption(Runtime_Opts* options)
 {
     uintptr stub = (uintptr)(GetFuncAddr(&Argument_Stub));
     stub -= OPTION_STUB_SIZE;
-    // check is valid runtime option stub
-    if (*(byte*)stub != 0xFC)
+    // check runtime option stub is valid
+    if (*(byte*)stub != OPTION_STUB_MAGIC)
     {
         return ERR_INVALID_OPTION_STUB;
     }
@@ -112,7 +123,7 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
 {
     uint32 size;
     // load PE Image, it cannot be empty
-    if (!runtime->GetArgPointer(ARG_IDX_PE_IMAGE, &config->Image, &size))
+    if (!runtime->Argument.GetPointer(ARG_IDX_PE_IMAGE, &config->Image, &size))
     {
         return ERR_NOT_FOUND_PE_IMAGE;
     }
@@ -120,17 +131,26 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
     {
         return ERR_EMPTY_PE_IMAGE_DATA;
     }
-    // load command line, it can be empty
-    if (!runtime->GetArgPointer(ARG_IDX_COMMAND_LINE, &config->CommandLine, &size))
+    // load command line ANSI, it can be empty
+    if (!runtime->Argument.GetPointer(ARG_IDX_CMDLINE_A, &config->CommandLineA, &size))
     {
-        return ERR_NOT_FOUND_COMMAND_LINE;
+        return ERR_NOT_FOUND_CMDLINE_A;
+    }
+    if (size > 4096)
+    {
+        return ERR_COMMAND_LINE_TOO_LONG;
+    }
+    // load command line Unicode, it can be empty
+    if (!runtime->Argument.GetPointer(ARG_IDX_CMDLINE_W, &config->CommandLineW, &size))
+    {
+        return ERR_NOT_FOUND_CMDLINE_W;
     }
     if (size > 4096)
     {
         return ERR_COMMAND_LINE_TOO_LONG;
     }
     // load STD_INPUT_HANDLE, it can be zero
-    if (!runtime->GetArgValue(ARG_IDX_STD_INPUT, &config->StdInput, &size))
+    if (!runtime->Argument.GetValue(ARG_IDX_STD_INPUT, &config->StdInput, &size))
     {
         return ERR_NOT_FOUND_STD_INPUT;
     }
@@ -139,7 +159,7 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
         return ERR_INVALID_STD_INPUT;
     }
     // load STD_OUTPUT_HANDLE, it can be zero
-    if (!runtime->GetArgValue(ARG_IDX_STD_OUTPUT, &config->StdOutput, &size))
+    if (!runtime->Argument.GetValue(ARG_IDX_STD_OUTPUT, &config->StdOutput, &size))
     {
         return ERR_NOT_FOUND_STD_OUTPUT;
     }
@@ -148,7 +168,7 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
         return ERR_INVALID_STD_OUTPUT;
     }
     // load STD_ERROR_HANDLE, it can be zero
-    if (!runtime->GetArgValue(ARG_IDX_STD_ERROR, &config->StdError, &size))
+    if (!runtime->Argument.GetValue(ARG_IDX_STD_ERROR, &config->StdError, &size))
     {
         return ERR_NOT_FOUND_STD_ERROR;
     }
@@ -157,7 +177,7 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
         return ERR_INVALID_STD_ERROR;
     }
     // load wait main, it must be true of false
-    if (!runtime->GetArgValue(ARG_IDX_WAIT_MAIN, &config->WaitMain, &size))
+    if (!runtime->Argument.GetValue(ARG_IDX_WAIT_MAIN, &config->WaitMain, &size))
     {
         return ERR_NOT_FOUND_WAIT_MAIN;
     }
