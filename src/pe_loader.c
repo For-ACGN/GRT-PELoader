@@ -50,6 +50,8 @@ typedef struct {
     uint16  NumSections;
     uint16  OptHeaderSize;
     uintptr DataDir;
+    uintptr ImportTable;
+    uint32  ImportTableSize;
     uintptr EntryPoint;
     uintptr ImageBase;
     uint32  ImageSize;
@@ -89,9 +91,9 @@ static errno initPELoaderEnvironment(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
-static bool  processImport(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
 static bool  initTLSCallback(PELoader* loader);
+static void  prepareImportTable(PELoader* loader);
 static bool  backupPEImage(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
 
@@ -99,13 +101,14 @@ static void  erasePELoaderMethods(PELoader* loader);
 static errno cleanPELoader(PELoader* loader);
 
 static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
-static void* ldr_GetMethods(byte* module, LPCSTR lpProcName);
+static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName);
 static errno ldr_init_mutex();
 static bool  ldr_copy_image();
 static void  ldr_tls_callback(DWORD dwReason);
 static errno ldr_exit_process(UINT uExitCode);
 static void  ldr_epilogue();
 
+static bool process_import();
 static void pe_entry_point();
 static bool pe_dll_main(DWORD dwReason, bool setExitCode);
 static void set_exit_code(uint code);
@@ -120,9 +123,8 @@ static HANDLE hook_CreateThread(
     POINTER lpThreadAttributes, SIZE_T dwStackSize, POINTER lpStartAddress,
     LPVOID lpParameter, DWORD dwCreationFlags, DWORD* lpThreadId
 );
-static void   hook_ExitThread(DWORD dwExitCode);
-static void   hook_ExitProcess(UINT uExitCode);
-
+static void hook_ExitThread(DWORD dwExitCode);
+static void hook_ExitProcess(UINT uExitCode);
 static void hook_msvcrt_exit(int exitcode);
 
 static void stub_ExecuteThread(LPVOID lpParameter);
@@ -248,7 +250,7 @@ static void* allocPELoaderMemPage(PELoader_Cfg* cfg)
     {
         return NULL;
     }
-    RandBuf(addr, (int64)size);
+    RandBuffer(addr, (int64)size);
     dbg_log("[PE Loader]", "Main Memory Page:  0x%zX", addr);
     return addr;
 }
@@ -419,6 +421,7 @@ static errno loadPEImage(PELoader* loader)
     {
         return ERR_LOADER_INIT_TLS_CALLBACK;
     }
+    prepareImportTable(loader);
     dbg_log("[PE Loader]", "PE Image: 0x%zX", loader->PEImage);
     return NO_ERROR;
 }
@@ -427,6 +430,10 @@ static bool parsePEImage(PELoader* loader)
 {
     uintptr imageAddr = (uintptr)(loader->Config.Image);
     // check PE file header
+    if (imageAddr == 0)
+    {
+        return false;
+    }
     if (*(byte*)(imageAddr+0) != 'M')
     {
         return false;
@@ -509,6 +516,16 @@ static bool mapSections(PELoader* loader)
     return true;
 }
 
+static void prepareImportTable(PELoader* loader)
+{
+    uintptr peImage = loader->PEImage;
+    uintptr dataDir = loader->DataDir;
+    uintptr offset = dataDir + IMAGE_DIRECTORY_ENTRY_IMPORT * PE_DATA_DIRECTORY_SIZE;
+
+    loader->ImportTable     = peImage + *(uint32*)(offset);
+    loader->ImportTableSize = *(uint32*)(offset+ 4 );
+}
+
 static bool fixRelocTable(PELoader* loader)
 {
     uintptr peImage = loader->PEImage;
@@ -523,10 +540,9 @@ static bool fixRelocTable(PELoader* loader)
     }
     void*  tableAddr  = (void*)relocTable;
     uint64 addrOffset = (int64)(loader->PEImage) - (int64)(loader->ImageBase);
-    Image_BaseRelocation* baseReloc;
     for (;;)
     {
-        baseReloc = (Image_BaseRelocation*)(relocTable);
+        Image_BaseRelocation* baseReloc = (Image_BaseRelocation*)(relocTable);
         if (baseReloc->VirtualAddress == 0)
         {
             break;
@@ -561,7 +577,7 @@ static bool fixRelocTable(PELoader* loader)
         relocTable += baseReloc->SizeOfBlock;
     }
     // destroy table for prevent extract raw PE image
-    RandBuf(tableAddr, tableSize);
+    RandBuffer(tableAddr, tableSize);
     return true;
 }
 
@@ -580,7 +596,7 @@ static bool initTLSCallback(PELoader* loader)
     Image_TLSDirectory* tls = (Image_TLSDirectory*)(tlsTable);
     loader->TLSList = (TLSCallback_t*)(tls->AddressOfCallBacks);
     // destroy table for prevent extract raw PE image
-    RandBuf((byte*)tlsTable, tableSize);
+    RandBuffer((byte*)tlsTable, tableSize);
     return true;
 }
 
@@ -597,6 +613,7 @@ static bool backupPEImage(PELoader* loader)
     {
         return false;
     }
+    RandBuffer(mem, (int64)size);
     loader->PEBackup = mem;
     // copy mapped PE image
     mem_copy(mem, (void*)(loader->PEImage), loader->ImageSize);
@@ -628,7 +645,7 @@ static void erasePELoaderMethods(PELoader* loader)
     uintptr begin = (uintptr)(GetFuncAddr(&allocPELoaderMemPage));
     uintptr end   = (uintptr)(GetFuncAddr(&erasePELoaderMethods));
     uintptr size  = end - begin;
-    RandBuf((byte*)begin, (int64)size);
+    RandBuffer((byte*)begin, (int64)size);
 }
 
 // ======================== these instructions will not be erased ========================
@@ -659,76 +676,6 @@ static bool recoverPageProtect(PELoader* loader, DWORD protect)
     uint    size  = end - begin;
     DWORD   old;
     return loader->VirtualProtect((void*)begin, size, protect, &old);
-}
-
-static bool processImport(PELoader* loader)
-{
-    uintptr peImage = loader->PEImage;
-    uintptr dataDir = loader->DataDir;
-    uintptr offset  = dataDir + IMAGE_DIRECTORY_ENTRY_IMPORT * PE_DATA_DIRECTORY_SIZE;
-    uintptr importTable = peImage + *(uint32*)(offset);
-    uint32  tableSize   = *(uint32*)(offset + 4);
-    // check need import
-    if (tableSize == 0)
-    {
-        return true;
-    }
-    // load library and fix function address
-    Image_ImportDescriptor* import;
-    for (;;)
-    {
-        import = (Image_ImportDescriptor*)(importTable);
-        if (import->Name == 0)
-        {
-            break;
-        }
-        LPCSTR  dllName = (LPCSTR)(peImage + import->Name);
-        HMODULE hModule = loader->LoadLibraryA(dllName);
-        if (hModule == NULL)
-        {
-            return false;
-        }
-        dbg_log("[PE Loader]", "LoadLibrary: %s", dllName);
-        uintptr srcThunk;
-        uintptr dstThunk;
-        if (import->OriginalFirstThunk != 0)
-        {
-            srcThunk = peImage + import->OriginalFirstThunk;
-        } else {
-            srcThunk = peImage + import->FirstThunk;
-        }
-        dstThunk = peImage + import->FirstThunk;
-        // fix function address
-        for (;;)
-        {
-            uintptr value = *(uintptr*)srcThunk;
-            if (value == 0)
-            {
-                break;
-            }
-            LPCSTR procName;
-            #ifdef _WIN64
-            if ((value & IMAGE_ORDINAL_FLAG64) != 0)
-            #elif _WIN32
-            if ((value & IMAGE_ORDINAL_FLAG32) != 0)
-            #endif
-            {
-                procName = (LPCSTR)(value&0xFFFF);
-            } else {
-                procName = (LPCSTR)(peImage + value + 2);
-            }
-            void* proc = ldr_GetProcAddress(hModule, procName);
-            if (proc == NULL)
-            {
-                return false;
-            }
-            *(uintptr*)dstThunk = (uintptr)proc;
-            srcThunk += sizeof(uintptr);
-            dstThunk += sizeof(uintptr);
-        }
-        importTable += sizeof(Image_ImportDescriptor);
-    }
-    return true;
 }
 
 static errno cleanPELoader(PELoader* loader)
@@ -808,7 +755,7 @@ static errno cleanPELoader(PELoader* loader)
         // release memory page for PE image
         if (peImage != NULL)
         {
-            RandBuf(peImage, loader->ImageSize);
+            RandBuffer(peImage, loader->ImageSize);
             if (!virtualFree(peImage, 0, MEM_RELEASE) && errno == NO_ERROR)
             {
                 errno = ERR_LOADER_CLEAN_FREE_PE;
@@ -817,7 +764,7 @@ static errno cleanPELoader(PELoader* loader)
         // release memory page for PE image backup
         if (peBackup != NULL)
         {
-            RandBuf(peBackup, loader->ImageSize);
+            RandBuffer(peBackup, loader->ImageSize);
             if (!virtualFree(peBackup, 0, MEM_RELEASE) && errno == NO_ERROR)
             {
                 errno = ERR_LOADER_CLEAN_FREE_BAK;
@@ -826,7 +773,7 @@ static errno cleanPELoader(PELoader* loader)
         // release main memory page
         if (memPage != NULL)
         {
-            RandBuf(memPage, MAIN_MEM_PAGE_SIZE);
+            RandBuffer(memPage, MAIN_MEM_PAGE_SIZE);
             if (!virtualFree(memPage, 0, MEM_RELEASE) && errno == NO_ERROR)
             {
                 errno = ERR_LOADER_CLEAN_FREE_MEM;
@@ -877,7 +824,7 @@ void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
     dbg_log("[PE Loader]", "GetProcAddress: %s", lpProcName);
     // use "mem_init" for prevent incorrect compiler
     // optimize and generate incorrect shellcode
-    byte module[MAX_PATH];
+    uint16 module[MAX_PATH];
     mem_init(module, sizeof(module));
     // get module file name
     if (GetModuleFileName(hModule, module, sizeof(module)) == 0)
@@ -894,7 +841,7 @@ void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 }
 
 __declspec(noinline)
-static void* ldr_GetMethods(byte* module, LPCSTR lpProcName)
+static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName)
 {
     typedef struct {
         uint hash; uint key; void* method;
@@ -1217,6 +1164,76 @@ static void hook_msvcrt_exit(int exitcode)
 }
 
 __declspec(noinline)
+static bool process_import()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    uintptr peImage     = loader->PEImage;
+    uintptr importTable = loader->ImportTable;
+    uint32  tableSize   = loader->ImportTableSize;
+    // check need import
+    if (tableSize == 0)
+    {
+        return true;
+    }
+    // load library and fix function address
+    for (;;)
+    {
+        Image_ImportDescriptor* import = (Image_ImportDescriptor*)(importTable);
+        if (import->Name == 0)
+        {
+            break;
+        }
+        LPCSTR  dllName = (LPCSTR)(peImage + import->Name);
+        HMODULE hModule = loader->LoadLibraryA(dllName);
+        if (hModule == NULL)
+        {
+            return false;
+        }
+        dbg_log("[PE Loader]", "LoadLibrary: %s", dllName);
+        uintptr srcThunk;
+        uintptr dstThunk;
+        if (import->OriginalFirstThunk != 0)
+        {
+            srcThunk = peImage + import->OriginalFirstThunk;
+        } else {
+            srcThunk = peImage + import->FirstThunk;
+        }
+        dstThunk = peImage + import->FirstThunk;
+        // fix function address
+        for (;;)
+        {
+            uintptr value = *(uintptr*)srcThunk;
+            if (value == 0)
+            {
+                break;
+            }
+            LPCSTR procName;
+            #ifdef _WIN64
+            if ((value & IMAGE_ORDINAL_FLAG64) != 0)
+            #elif _WIN32
+            if ((value & IMAGE_ORDINAL_FLAG32) != 0)
+            #endif
+            {
+                procName = (LPCSTR)(value&0xFFFF);
+            } else {
+                procName = (LPCSTR)(peImage + value + 2);
+            }
+            void* proc = ldr_GetProcAddress(hModule, procName);
+            if (proc == NULL)
+            {
+                return false;
+            }
+            *(uintptr*)dstThunk = (uintptr)proc;
+            srcThunk += sizeof(uintptr);
+            dstThunk += sizeof(uintptr);
+        }
+        importTable += sizeof(Image_ImportDescriptor);
+    }
+    return true;
+}
+
+__declspec(noinline)
 static void pe_entry_point()
 {
     PELoader* loader = getPELoaderPointer();
@@ -1352,7 +1369,7 @@ errno LDR_Execute()
             break;
         }
         // load library and fix function address
-        if (!processImport(loader))
+        if (!processImport())
         {
             errno = ERR_LOADER_PROCESS_IMPORT;
             break;
