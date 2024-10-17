@@ -1,17 +1,49 @@
-#include <stdio.h>
 #include "c_types.h"
 #include "hash_api.h"
 #include "errno.h"
-#include "runtime.h"
-#include "pe_loader.h"
 #include "boot.h"
+#include "pe_loader.h"
+#include "runtime.h"
 #include "epilogue.h"
+
+// NOT using stdio is to ensure that no runtime instructions
+// are introduced to avoid compiler optimization link errors
+// that cause the extracted shellcode to contain incorrect
+// relative/absolute memory addresses.
+
+static LoadLibraryA_t LoadLibraryA;
+static FreeLibrary_t  FreeLibrary;
+static CreateFileA_t  CreateFileA;
+static WriteFile_t    WriteFile;
+static CloseHandle_t  CloseHandle;
+
+typedef int (*printf_s_t)(const char* format, ...);
+static printf_s_t printf_s;
 
 bool saveShellcode();
 bool testShellcode();
 
-int __cdecl main()
+static void init()
 {
+    LoadLibraryA = FindAPI_A("kernel32.dll", "LoadLibraryA");
+    FreeLibrary  = FindAPI_A("kernel32.dll", "FreeLibrary");
+    CreateFileA  = FindAPI_A("kernel32.dll", "CreateFileA");
+    WriteFile    = FindAPI_A("kernel32.dll", "WriteFile");
+    CloseHandle  = FindAPI_A("kernel32.dll", "CloseHandle");
+}
+
+#pragma comment(linker, "/ENTRY:EntryPoint")
+int EntryPoint()
+{
+    init();
+
+    HMODULE hModule = LoadLibraryA("msvcrt.dll");
+    if (hModule == NULL)
+    {
+        return -1;
+    }
+    printf_s = FindAPI_A("msvcrt.dll", "printf_s");
+
     if (!saveShellcode())
     {
         return 1;
@@ -30,49 +62,48 @@ bool saveShellcode()
     uintptr end   = (uintptr)(&Argument_Stub);
     uintptr size  = end - begin;
 
-    // check option stub is valid
+    // check runtime option stub is valid
     end -= OPTION_STUB_SIZE;
-    if (*(byte*)end != 0xFC)
+    if (*(byte*)end != OPTION_STUB_MAGIC)
     {
         printf_s("invalid runtime option stub\n");
         return false;
     }
-
-    // conut 0xFF for check the shellcode tail is valid
-    uint num0xFF = 0;
-    for (int i = 0; i < 16; i++)
+    for (uintptr i = 0; i < OPTION_STUB_SIZE - 1; i++)
     {
-        end--;
-        if (*(byte*)end != 0xFF)
+        end++;
+        if (*(byte*)(end) != 0x00)
         {
-            break;
+            printf_s("invalid runtime option stub\n");
+            return false;
         }
-        num0xFF++;
-    }
-    if (num0xFF != 16)
-    {
-        printf_s("invalid shellcode tail\n");
-        return false;
     }
 
-    // write shellcode
+    // extract shellcode and save to file
 #ifdef _WIN64
-    FILE* file = fopen("../dist/PELoader_x64.bin", "wb");
+    LPSTR path = "../dist/PELoader_x64.bin";
 #elif _WIN32
-    FILE* file = fopen("../dist/PELoader_x86.bin", "wb");
+    LPSTR path = "../dist/PELoader_x86.bin";
 #endif
-    if (file == NULL)
+    HANDLE hFile = CreateFileA(
+        path, GENERIC_WRITE, 0, NULL, 
+        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL
+    );
+    if (hFile == INVALID_HANDLE_VALUE)
     {
-        printf_s("failed to create shellcode output file\n");
+        printf_s("failed to create shellcode output file: 0x%X\n", GetLastErrno());
         return false;
     }
-    size_t n = fwrite((byte*)begin, (size_t)size, 1, file);
-    if (n != 1)
+    if (!WriteFile(hFile, (byte*)begin, (DWORD)size, NULL, NULL))
     {
-        printf_s("failed to save shellcode\n");
+        printf_s("failed to save shellcode: 0x%X\n", GetLastErrno());
         return false;
     }
-    fclose(file);
+    if (!CloseHandle(hFile))
+    {
+        printf_s("failed to close file: 0x%X\n", GetLastErrno());
+        return false;
+    }
     return true;
 }
 
