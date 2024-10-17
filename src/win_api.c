@@ -3,7 +3,7 @@
 #include "lib_memory.h"
 #include "win_api.h"
 
-uint16 GetModuleFileName(HMODULE hModule, byte* name, uint16 maxSize)
+DWORD GetModuleFileName(HMODULE hModule, LPWSTR lpFilename, DWORD nSize)
 {
 #ifdef _WIN64
     uintptr peb = __readgsqword(96);
@@ -39,11 +39,11 @@ uint16 GetModuleFileName(HMODULE hModule, byte* name, uint16 maxSize)
     #elif _WIN32
         uint16 nameLen = *(uint16*)(mod + 38);
     #endif
-        if (nameLen > maxSize)
+        if (nameLen > nSize)
         {
-            nameLen = maxSize;
+            nameLen = (uint16)nSize;
         }
-        mem_copy(name, (byte*)modName, nameLen);
+        mem_copy(lpFilename, (LPWSTR)modName, nameLen);
         return nameLen;
     }
     return 0;
