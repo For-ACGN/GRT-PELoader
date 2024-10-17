@@ -44,7 +44,13 @@
     <MASM Include="..\asm\msvc\llmul.asm">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </MASM>
+    <MASM Include="..\asm\msvc\llrem.asm">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </MASM>
     <MASM Include="..\asm\msvc\llshl.asm">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </MASM>
+    <MASM Include="..\asm\msvc\llshr.asm">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </MASM>
     <MASM Include="..\asm\msvc\ullrem.asm">
@@ -53,6 +59,7 @@
     <MASM Include="..\asm\msvc\ullshr.asm">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </MASM>
+    <MASM Include="..\asm\_random.asm" />
     <MASM Include="..\asm\runtime.asm" />
     <MASM Include="..\asm\epilogue.asm" />
   </ItemGroup>
