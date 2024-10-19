@@ -1,17 +1,26 @@
 #include <stdio.h>
 #include "build.h"
 #include "c_types.h"
+#include "lib_memory.h"
 #include "hash_api.h"
+#include "random.h"
 #include "errno.h"
 #include "runtime.h"
 #include "pe_loader.h"
+#include "epilogue.h"
 #include "test.h"
+
+static void* copyShellcode();
 
 bool TestInitPELoader()
 {
     // read PE image file
 #ifdef _WIN64
-    FILE* file = fopen("E:\\Temp\\go_amd64.exe", "rb");
+    // FILE* file = fopen("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.exe", "rb");
+    FILE* file = fopen("C:\\Windows\\System32\\cmd.exe", "rb");
+    // FILE* file = fopen("test_x64.exe", "rb");
+    // FILE* file = fopen("E:\\Temp\\go_amd64.exe", "rb");
+    // FILE* file = fopen("E:\\Temp\\rust_x64.exe", "rb");
     // FILE* file = fopen("testdata\\rust_x64.exe", "rb");
     // FILE* file = fopen("testdata\\go_amd64.exe", "rb");
 #elif _WIN32
@@ -81,12 +90,20 @@ bool TestInitPELoader()
         .NotEraseInstruction = true,
         .NotAdjustProtect    = false,
     };
+#ifdef SHELLCODE_MODE
+    typedef PELoader_M* (*InitPELoader_t)(PELoader_Cfg* cfg);
+    InitPELoader_t initPELoader = copyShellcode();
+    pe_loader = initPELoader(&cfg);
+#else
     pe_loader = InitPELoader(&cfg);
+#endif // SHELLCODE_MODE
     if (pe_loader == NULL)
     {
         printf_s("failed to initialize PE loader: 0x%X\n", GetLastErrno());
         return false;
     }
+    // erase PE image after initialize
+    RandBuffer(buf, fileSize);
     return true;
 }
 
@@ -103,7 +120,7 @@ bool TestPELoader_Execute()
         printf_s("unexpected exit code: 0x%zX\n", exitCode);
         return false;
     }
-    runtime->Thread.Sleep(50000);
+    runtime->Thread.Sleep(5000);
 
     errno errno = pe_loader->Exit(0);
     if (errno != NO_ERROR)
@@ -167,4 +184,22 @@ bool TestPELoader_Destroy()
         return false;
     }
     return true;
+}
+
+static void* copyShellcode()
+{
+    VirtualAlloc_t VirtualAlloc = FindAPI_A("kernel32.dll", "VirtualAlloc");
+
+    uintptr begin = (uintptr)(&InitPELoader);
+    uintptr end   = (uintptr)(&Epilogue);
+    uintptr size  = end - begin;
+    void* mem = VirtualAlloc(NULL, size, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (mem == NULL)
+    {
+        printf_s("failed to allocate memory: 0x%X\n", GetLastErrno());
+        return NULL;
+    }
+    mem_copy(mem, (void*)begin, size);
+    printf_s("shellcode: 0x%zX\n", (uintptr)mem);
+    return mem;
 }
