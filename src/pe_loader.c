@@ -104,11 +104,11 @@ static void* ldr_GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
 static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName);
 static errno ldr_init_mutex();
 static bool  ldr_copy_image();
+static bool  ldr_process_import();
 static void  ldr_tls_callback(DWORD dwReason);
 static errno ldr_exit_process(UINT uExitCode);
 static void  ldr_epilogue();
 
-static bool process_import();
 static void pe_entry_point();
 static bool pe_dll_main(DWORD dwReason, bool setExitCode);
 static void set_exit_code(uint code);
@@ -434,11 +434,11 @@ static bool parsePEImage(PELoader* loader)
     {
         return false;
     }
-    if (*(byte*)(imageAddr+0) != 'M')
+    if ((*(byte*)(imageAddr+0)^0x7C) != ('M'^0x7C))
     {
         return false;
     }
-    if (*(byte*)(imageAddr+1) != 'Z')
+    if ((*(byte*)(imageAddr+1)^0xA3) != ('Z'^0xA3))
     {
         return false;
     }
@@ -849,25 +849,25 @@ static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName)
     method methods[] =
 #ifdef _WIN64
     {
-        // { 0xC26C7EDC042682D8, 0x0CE719F33FC82318, GetFuncAddr(&ldr_GetProcAddress)   },
-        { 0xA23FAC0E6398838A, 0xE4990D7D4933EE6A, GetFuncAddr(&hook_GetCommandLineA) },
-        { 0xABD1E8F0D28E9F46, 0xAF34F5979D300C70, GetFuncAddr(&hook_GetCommandLineW) },
-        { 0x33F761AFCEBF69AA, 0x6D591538B8A5428F, GetFuncAddr(&hook_GetStdHandle)    },
-        { 0x3C0574BF5EF852B3, 0xAF1A54F0416DC1C9, GetFuncAddr(&hook_CreateThread)    },
-        { 0x4DEF18548F22FF42, 0x107052342545FBAA, GetFuncAddr(&hook_ExitThread)      },
-        { 0xC9C5D350BB118FAE, 0x061A602F681F2636, GetFuncAddr(&hook_ExitProcess)     },
-        { 0xC32827BED690ED91, 0x07E354CB981B352E, GetFuncAddr(&hook_msvcrt_exit)     },
+        { 0x1DE95D906D270C1E, 0x2672227B97F5DAD9, GetFuncAddr(&ldr_GetProcAddress)   },
+        { 0x1848E44B66F18C48, 0x16480B2B71CCBA71, GetFuncAddr(&hook_GetCommandLineA) },
+        { 0x6CDF268D5D259686, 0xB2ECF3E4AAC267BA, GetFuncAddr(&hook_GetCommandLineW) },
+        { 0xD64DA86D6A985B33, 0xE8DAF74FBC29AF11, GetFuncAddr(&hook_GetStdHandle)    },
+        { 0x9B91E956B96D6389, 0xEBB723BF1CEE4569, GetFuncAddr(&hook_CreateThread)    },
+        { 0x053D2B184D2AD724, 0x5DFCC08DACB101DD, GetFuncAddr(&hook_ExitThread)      },
+        { 0x003837989C804A7A, 0x77BACCABEB6CE508, GetFuncAddr(&hook_ExitProcess)     },
+        { 0x4B7D921A385FB3D2, 0xC579F5ED84E53139, GetFuncAddr(&hook_msvcrt_exit)     },
     };
 #elif _WIN32
     {
-        // { 0xA9AA650C, 0x56E5FE8B, GetFuncAddr(&ldr_GetProcAddress) },
-        { 0x7971F5C6, 0xC2A37949, GetFuncAddr(&hook_GetCommandLineA) },
-        { 0xB921D9EC, 0xD12A689C, GetFuncAddr(&hook_GetCommandLineW) },
-        { 0x8ED77E9F, 0xF7E28EA3, GetFuncAddr(&hook_GetStdHandle)    },
-        { 0x71A66537, 0x6281B869, GetFuncAddr(&hook_CreateThread)    },
-        { 0x6F906B26, 0x297D984C, GetFuncAddr(&hook_ExitThread)      },
-        { 0x2BE03D8D, 0xDEB0A6F3, GetFuncAddr(&hook_ExitProcess)     },
-        { 0xF71C9615, 0xF38936BF, GetFuncAddr(&hook_msvcrt_exit)     },
+        { 0x336C0B7C, 0xE6FD5E12, GetFuncAddr(&ldr_GetProcAddress)   },
+        { 0x027AFDAA, 0x6F1EE876, GetFuncAddr(&hook_GetCommandLineA) },
+        { 0x76C60C20, 0x10FA5D7C, GetFuncAddr(&hook_GetCommandLineW) },
+        { 0x7DF993F6, 0x4AB8D860, GetFuncAddr(&hook_GetStdHandle)    },
+        { 0x0465FE82, 0x70880E4A, GetFuncAddr(&hook_CreateThread)    },
+        { 0x4F0C77BA, 0x89DD7B71, GetFuncAddr(&hook_ExitThread)      },
+        { 0xB439D7F0, 0xF97FF53F, GetFuncAddr(&hook_ExitProcess)     },
+        { 0xF1E55A4D, 0x9A112CBD, GetFuncAddr(&hook_msvcrt_exit)     },
     };
 #endif
     for (int i = 0; i < arrlen(methods); i++)
@@ -914,6 +914,76 @@ static bool ldr_copy_image()
     mem_copy((void*)loader->PEImage, loader->PEBackup, loader->ImageSize);
 
     return loader->ReleaseMutex(loader->StatusMu);
+}
+
+__declspec(noinline)
+static bool ldr_process_import()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    uintptr peImage     = loader->PEImage;
+    uintptr importTable = loader->ImportTable;
+    uint32  tableSize   = loader->ImportTableSize;
+    // check need import
+    if (tableSize == 0)
+    {
+        return true;
+    }
+    // load library and fix function address
+    for (;;)
+    {
+        Image_ImportDescriptor* import = (Image_ImportDescriptor*)(importTable);
+        if (import->Name == 0)
+        {
+            break;
+        }
+        LPCSTR  dllName = (LPCSTR)(peImage + import->Name);
+        HMODULE hModule = loader->LoadLibraryA(dllName);
+        if (hModule == NULL)
+        {
+            return false;
+        }
+        dbg_log("[PE Loader]", "LoadLibrary: %s", dllName);
+        uintptr srcThunk;
+        uintptr dstThunk;
+        if (import->OriginalFirstThunk != 0)
+        {
+            srcThunk = peImage + import->OriginalFirstThunk;
+        } else {
+            srcThunk = peImage + import->FirstThunk;
+        }
+        dstThunk = peImage + import->FirstThunk;
+        // fix function address
+        for (;;)
+        {
+            uintptr value = *(uintptr*)srcThunk;
+            if (value == 0)
+            {
+                break;
+            }
+            LPCSTR procName;
+        #ifdef _WIN64
+            if ((value & IMAGE_ORDINAL_FLAG64) != 0)
+        #elif _WIN32
+            if ((value & IMAGE_ORDINAL_FLAG32) != 0)
+        #endif
+            {
+                procName = (LPCSTR)(value&0xFFFF);
+            } else {
+                procName = (LPCSTR)(peImage + value + 2);
+            }
+            void* proc = ldr_GetProcAddress(hModule, procName);
+            if (proc == NULL)
+            {
+                return false;
+            }
+            *(uintptr*)dstThunk = (uintptr)proc;
+            srcThunk += sizeof(uintptr);
+            dstThunk += sizeof(uintptr);
+        }
+        importTable += sizeof(Image_ImportDescriptor);
+    }
+    return true;
 }
 
 __declspec(noinline)
@@ -1164,76 +1234,6 @@ static void hook_msvcrt_exit(int exitcode)
 }
 
 __declspec(noinline)
-static bool process_import()
-{
-    PELoader* loader = getPELoaderPointer();
-
-    uintptr peImage     = loader->PEImage;
-    uintptr importTable = loader->ImportTable;
-    uint32  tableSize   = loader->ImportTableSize;
-    // check need import
-    if (tableSize == 0)
-    {
-        return true;
-    }
-    // load library and fix function address
-    for (;;)
-    {
-        Image_ImportDescriptor* import = (Image_ImportDescriptor*)(importTable);
-        if (import->Name == 0)
-        {
-            break;
-        }
-        LPCSTR  dllName = (LPCSTR)(peImage + import->Name);
-        HMODULE hModule = loader->LoadLibraryA(dllName);
-        if (hModule == NULL)
-        {
-            return false;
-        }
-        dbg_log("[PE Loader]", "LoadLibrary: %s", dllName);
-        uintptr srcThunk;
-        uintptr dstThunk;
-        if (import->OriginalFirstThunk != 0)
-        {
-            srcThunk = peImage + import->OriginalFirstThunk;
-        } else {
-            srcThunk = peImage + import->FirstThunk;
-        }
-        dstThunk = peImage + import->FirstThunk;
-        // fix function address
-        for (;;)
-        {
-            uintptr value = *(uintptr*)srcThunk;
-            if (value == 0)
-            {
-                break;
-            }
-            LPCSTR procName;
-            #ifdef _WIN64
-            if ((value & IMAGE_ORDINAL_FLAG64) != 0)
-            #elif _WIN32
-            if ((value & IMAGE_ORDINAL_FLAG32) != 0)
-            #endif
-            {
-                procName = (LPCSTR)(value&0xFFFF);
-            } else {
-                procName = (LPCSTR)(peImage + value + 2);
-            }
-            void* proc = ldr_GetProcAddress(hModule, procName);
-            if (proc == NULL)
-            {
-                return false;
-            }
-            *(uintptr*)dstThunk = (uintptr)proc;
-            srcThunk += sizeof(uintptr);
-            dstThunk += sizeof(uintptr);
-        }
-        importTable += sizeof(Image_ImportDescriptor);
-    }
-    return true;
-}
-
-__declspec(noinline)
 static void pe_entry_point()
 {
     PELoader* loader = getPELoaderPointer();
@@ -1369,7 +1369,7 @@ errno LDR_Execute()
             break;
         }
         // load library and fix function address
-        if (!processImport())
+        if (!ldr_process_import())
         {
             errno = ERR_LOADER_PROCESS_IMPORT;
             break;
@@ -1379,7 +1379,7 @@ errno LDR_Execute()
         {
             if (!pe_dll_main(DLL_PROCESS_ATTACH, true))
             {
-                errno = ERR_LOADER_DLL_MAIN;
+                errno = ERR_LOADER_CALL_DLL_MAIN;
             }
             break;
         }
