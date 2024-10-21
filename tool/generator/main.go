@@ -17,6 +17,8 @@ import (
 
 var (
 	tplDir  string
+	arch    int
+	mode    string
 	pePath  string
 	cmdLine string
 	wait    bool
@@ -27,6 +29,8 @@ var (
 func init() {
 	option.Flag(&options)
 	flag.StringVar(&tplDir, "tpl", "template", "set shellcode templates directory")
+	flag.IntVar(&arch, "arch", 0, "set shellcode template architecture")
+	flag.StringVar(&mode, "mode", "", "select load mode")
 	flag.StringVar(&pePath, "pe", "", "set input PE file path")
 	flag.StringVar(&cmdLine, "cmd", "", "set command line for exe")
 	flag.BoolVar(&wait, "wait", false, "wait for shellcode to exit")
@@ -41,27 +45,64 @@ func main() {
 	ldrX86, err := os.ReadFile(filepath.Join(tplDir, "PELoader_x86.bin"))
 	checkError(err)
 
-	fmt.Println("parse PE image file")
-	peData, err := os.ReadFile(pePath)
-	checkError(err)
-	peFile, err := pe.NewFile(bytes.NewReader(peData))
-	checkError(err)
+	peConfig := make([]byte, 1)
+	switch mode {
+	case "embed":
+		peConfig[0] = 1
+		fmt.Println("use embed image mode")
+
+		// disable compression
+		// TODO update it
+		peConfig = append(peConfig, 0)
+
+		fmt.Println("parse PE image file")
+		peData, err := os.ReadFile(pePath)
+		checkError(err)
+		peFile, err := pe.NewFile(bytes.NewReader(peData))
+		checkError(err)
+		switch peFile.OptionalHeader.(type) {
+		case *pe.OptionalHeader64:
+			arch = 64
+		case *pe.OptionalHeader32:
+			arch = 32
+		default:
+			fmt.Println("unknown optional header type")
+			return
+		}
+		// write length
+		buf := make([]byte, 4)
+		binary.LittleEndian.PutUint32(buf, uint32(len(peData)))
+		peConfig = append(peConfig, buf...)
+		// write pe image
+		peConfig = append(peConfig, peData...)
+	case "file":
+		peConfig[0] = 2
+		path := stringToUTF16(pePath + "\x00")
+		peConfig = append(peConfig, path...)
+	case "http":
+		peConfig[0] = 3
+		path := stringToUTF16(pePath + "\x00")
+		peConfig = append(peConfig, path...)
+	default:
+		fmt.Println("unknown load mode")
+		return
+	}
 
 	var (
 		template  []byte
 		stdHandle []byte
 	)
-	switch peFile.OptionalHeader.(type) {
-	case *pe.OptionalHeader64:
+	switch arch {
+	case 64:
 		template = ldrX64
 		stdHandle = make([]byte, 8)
 		fmt.Println("select template for x64")
-	case *pe.OptionalHeader32:
+	case 32:
 		template = ldrX86
 		stdHandle = make([]byte, 4)
 		fmt.Println("select template for x86")
 	default:
-		fmt.Println("unknown optional header type")
+		fmt.Println("unknown template architecture")
 		return
 	}
 
@@ -76,17 +117,16 @@ func main() {
 	)
 	if cmdLine != "" {
 		peName := filepath.Base(pePath)
+		if peName == string(filepath.Separator) {
+			peName = "test.exe"
+		}
 		if strings.Contains(peName, " ") {
 			peName = "\"" + peName + "\""
 		}
 		peName += " "
-		cmdLineA = []byte(peName + cmdLine + "\x00")
-
-		w := utf16.Encode([]rune(peName + cmdLine))
-		cmdLineW = make([]byte, len(w)*2+2)
-		for i := 0; i < len(w); i++ {
-			binary.LittleEndian.PutUint16(cmdLineW[i*2:], w[i])
-		}
+		cmdLine = peName + cmdLine + "\x00"
+		cmdLineA = []byte(cmdLine)
+		cmdLineW = []byte(stringToUTF16(cmdLine))
 	}
 
 	argWait := make([]byte, 1)
@@ -94,7 +134,7 @@ func main() {
 		argWait[0] = 1
 	}
 	args := [][]byte{
-		peData, cmdLineA, cmdLineW,
+		peConfig, cmdLineA, cmdLineW,
 		stdHandle, stdHandle, stdHandle,
 		argWait,
 	}
@@ -107,6 +147,15 @@ func main() {
 	checkError(err)
 
 	fmt.Println("generate shellcode successfully")
+}
+
+func stringToUTF16(s string) string {
+	w := utf16.Encode([]rune(s))
+	output := make([]byte, len(w)*2)
+	for i := 0; i < len(w); i++ {
+		binary.LittleEndian.PutUint16(output[i*2:], w[i])
+	}
+	return string(output)
 }
 
 func checkError(err error) {
