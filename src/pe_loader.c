@@ -2,6 +2,7 @@
 #include "windows_t.h"
 #include "pe_image.h"
 #include "rel_addr.h"
+#include "lib_string.h"
 #include "lib_memory.h"
 #include "hash_api.h"
 #include "win_api.h"
@@ -116,18 +117,23 @@ static uint get_exit_code();
 static void set_running(bool run);
 static bool is_running();
 
-static LPSTR  hook_GetCommandLineA();
-static LPWSTR hook_GetCommandLineW();
-static HANDLE hook_GetStdHandle(DWORD nStdHandle);
-static HANDLE hook_CreateThread(
+LPSTR   hook_GetCommandLineA();
+LPWSTR  hook_GetCommandLineW();
+LPWSTR* hook_CommandLineToArgvW(LPCWSTR lpCmdLine, int* pNumArgs);
+HANDLE  hook_GetStdHandle(DWORD nStdHandle);
+HANDLE  hook_CreateThread(
     POINTER lpThreadAttributes, SIZE_T dwStackSize, POINTER lpStartAddress,
     LPVOID lpParameter, DWORD dwCreationFlags, DWORD* lpThreadId
 );
-static void hook_ExitThread(DWORD dwExitCode);
-static void hook_ExitProcess(UINT uExitCode);
-static void hook_msvcrt_exit(int exitcode);
+void stub_ExecuteThread(LPVOID lpParameter);
+void hook_ExitThread(DWORD dwExitCode);
+void hook_ExitProcess(UINT uExitCode);
 
-static void stub_ExecuteThread(LPVOID lpParameter);
+int  hook_msvcrt_wgetmainargs(
+    int* argc, uint16*** argv, uint16*** env,
+    int doWildCard, void* startInfo
+);
+void hook_msvcrt_exit(int exitcode);
 
 PELoader_M* InitPELoader(PELoader_Cfg* cfg)
 {
@@ -448,7 +454,7 @@ static bool parsePEImage(PELoader* loader)
     uint16 optHeaderSize   = *(uint16*)(imageAddr + peOffset + 20);
     uint16 characteristics = *(uint16*)(imageAddr + peOffset + 22);
     // check PE file typee
-    bool isDLL = (characteristics & IMAGE_FILE_DLL) == IMAGE_FILE_DLL;
+    bool isDLL = (characteristics & IMAGE_FILE_DLL) != 0;
     // parse OptionalHeader
 #ifdef _WIN64
     uint16 ddOffset = PE_OPT_HEADER_SIZE_64 - 16 * PE_DATA_DIRECTORY_SIZE;
@@ -472,6 +478,7 @@ static bool parsePEImage(PELoader* loader)
     loader->ImageBase     = imageBase;
     loader->ImageSize     = imageSize;
     loader->IsDLL         = isDLL;
+    dbg_log("[PE Loader]", "characteristics: 0x%X", characteristics);
     return true;
 }
 
@@ -849,25 +856,29 @@ static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName)
     method methods[] =
 #ifdef _WIN64
     {
-        { 0x1DE95D906D270C1E, 0x2672227B97F5DAD9, GetFuncAddr(&ldr_GetProcAddress)   },
-        { 0x1848E44B66F18C48, 0x16480B2B71CCBA71, GetFuncAddr(&hook_GetCommandLineA) },
-        { 0x6CDF268D5D259686, 0xB2ECF3E4AAC267BA, GetFuncAddr(&hook_GetCommandLineW) },
-        { 0xD64DA86D6A985B33, 0xE8DAF74FBC29AF11, GetFuncAddr(&hook_GetStdHandle)    },
-        { 0x9B91E956B96D6389, 0xEBB723BF1CEE4569, GetFuncAddr(&hook_CreateThread)    },
-        { 0x053D2B184D2AD724, 0x5DFCC08DACB101DD, GetFuncAddr(&hook_ExitThread)      },
-        { 0x003837989C804A7A, 0x77BACCABEB6CE508, GetFuncAddr(&hook_ExitProcess)     },
-        { 0x4B7D921A385FB3D2, 0xC579F5ED84E53139, GetFuncAddr(&hook_msvcrt_exit)     },
+        { 0x1DE95D906D270C1E, 0x2672227B97F5DAD9, GetFuncAddr(&ldr_GetProcAddress)       },
+        { 0x1848E44B66F18C48, 0x16480B2B71CCBA71, GetFuncAddr(&hook_GetCommandLineA)     },
+        { 0x6CDF268D5D259686, 0xB2ECF3E4AAC267BA, GetFuncAddr(&hook_GetCommandLineW)     },
+        { 0x091A5CA0D803A190, 0x01DDBC313ED0F7ED, GetFuncAddr(&hook_CommandLineToArgvW)  },
+        { 0xD64DA86D6A985B33, 0xE8DAF74FBC29AF11, GetFuncAddr(&hook_GetStdHandle)        },
+        { 0x9B91E956B96D6389, 0xEBB723BF1CEE4569, GetFuncAddr(&hook_CreateThread)        },
+        { 0x053D2B184D2AD724, 0x5DFCC08DACB101DD, GetFuncAddr(&hook_ExitThread)          },
+        { 0x003837989C804A7A, 0x77BACCABEB6CE508, GetFuncAddr(&hook_ExitProcess)         },
+        { 0xB6627A6DDB0A9B1A, 0x729C834DB43EB70A, GetFuncAddr(&hook_msvcrt_wgetmainargs) },
+        { 0x4B7D921A385FB3D2, 0xC579F5ED84E53139, GetFuncAddr(&hook_msvcrt_exit)         },
     };
 #elif _WIN32
     {
-        { 0x336C0B7C, 0xE6FD5E12, GetFuncAddr(&ldr_GetProcAddress)   },
-        { 0x027AFDAA, 0x6F1EE876, GetFuncAddr(&hook_GetCommandLineA) },
-        { 0x76C60C20, 0x10FA5D7C, GetFuncAddr(&hook_GetCommandLineW) },
-        { 0x7DF993F6, 0x4AB8D860, GetFuncAddr(&hook_GetStdHandle)    },
-        { 0x0465FE82, 0x70880E4A, GetFuncAddr(&hook_CreateThread)    },
-        { 0x4F0C77BA, 0x89DD7B71, GetFuncAddr(&hook_ExitThread)      },
-        { 0xB439D7F0, 0xF97FF53F, GetFuncAddr(&hook_ExitProcess)     },
-        { 0xF1E55A4D, 0x9A112CBD, GetFuncAddr(&hook_msvcrt_exit)     },
+        { 0x336C0B7C, 0xE6FD5E12, GetFuncAddr(&ldr_GetProcAddress)       },
+        { 0x027AFDAA, 0x6F1EE876, GetFuncAddr(&hook_GetCommandLineA)     },
+        { 0x76C60C20, 0x10FA5D7C, GetFuncAddr(&hook_GetCommandLineW)     },
+        { 0xABE5D9A9, 0x32898C57, GetFuncAddr(&hook_CommandLineToArgvW)  },
+        { 0x7DF993F6, 0x4AB8D860, GetFuncAddr(&hook_GetStdHandle)        },
+        { 0x0465FE82, 0x70880E4A, GetFuncAddr(&hook_CreateThread)        },
+        { 0x4F0C77BA, 0x89DD7B71, GetFuncAddr(&hook_ExitThread)          },
+        { 0xB439D7F0, 0xF97FF53F, GetFuncAddr(&hook_ExitProcess)         },
+        { 0x4C88022B, 0xA9AA3D62, GetFuncAddr(&hook_msvcrt_wgetmainargs) },
+        { 0xF1E55A4D, 0x9A112CBD, GetFuncAddr(&hook_msvcrt_exit)         },
     };
 #endif
     for (int i = 0; i < arrlen(methods); i++)
@@ -1054,7 +1065,7 @@ static errno ldr_exit_process(UINT uExitCode)
 }
 
 __declspec(noinline)
-static LPSTR hook_GetCommandLineA()
+LPSTR hook_GetCommandLineA()
 {
     PELoader* loader = getPELoaderPointer();
 
@@ -1070,7 +1081,7 @@ static LPSTR hook_GetCommandLineA()
 }
 
 __declspec(noinline)
-static LPWSTR hook_GetCommandLineW()
+LPWSTR hook_GetCommandLineW()
 {
     PELoader* loader = getPELoaderPointer();
 
@@ -1086,7 +1097,39 @@ static LPWSTR hook_GetCommandLineW()
 }
 
 __declspec(noinline)
-static HANDLE hook_GetStdHandle(DWORD nStdHandle)
+LPWSTR* hook_CommandLineToArgvW(LPCWSTR lpCmdLine, int* pNumArgs)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    dbg_log("[PE Loader]", "CommandLineToArgvW: \"%ls\"", lpCmdLine);
+
+    // find shell32.CommandLineToArgvW
+#ifdef _WIN64
+    uint hash = 0x4A48978496F59E02;
+    uint key  = 0xC735570A84698151;
+#elif _WIN32
+    uint hash = 0xD7007E2E;
+    uint key  = 0x15875D48;
+#endif
+    CommandLineToArgvW_t CommandLineToArgvW = loader->Config.FindAPI(hash, key);
+    if (CommandLineToArgvW == NULL)
+    {
+        return NULL;
+    }
+
+    // if lpCmdLine is not L"", call the original function
+    uint16 empty[] = { 0x0000 };
+    if (strcmp_w((UTF16)lpCmdLine, empty) != 0)
+    {
+        return CommandLineToArgvW(lpCmdLine, pNumArgs);
+    }
+
+    LPWSTR cmdLine = hook_GetCommandLineW();
+    return CommandLineToArgvW(cmdLine, pNumArgs);
+}
+
+__declspec(noinline)
+HANDLE hook_GetStdHandle(DWORD nStdHandle)
 {
     PELoader* loader = getPELoaderPointer();
 
@@ -1130,7 +1173,7 @@ typedef struct {
 typedef void (*func_entry_t)(LPVOID lpParameter);
 
 __declspec(noinline)
-static HANDLE hook_CreateThread(
+HANDLE hook_CreateThread(
     POINTER lpThreadAttributes, SIZE_T dwStackSize, POINTER lpStartAddress,
     LPVOID lpParameter, DWORD dwCreationFlags, DWORD* lpThreadId
 )
@@ -1161,7 +1204,7 @@ static HANDLE hook_CreateThread(
 }
 
 __declspec(noinline)
-static void stub_ExecuteThread(LPVOID lpParameter)
+void stub_ExecuteThread(LPVOID lpParameter)
 {
     PELoader* loader = getPELoaderPointer();
 
@@ -1194,7 +1237,7 @@ static void stub_ExecuteThread(LPVOID lpParameter)
 }
 
 __declspec(noinline)
-static void hook_ExitThread(DWORD dwExitCode)
+void hook_ExitThread(DWORD dwExitCode)
 {
     PELoader* loader = getPELoaderPointer();
 
@@ -1212,7 +1255,7 @@ static void hook_ExitThread(DWORD dwExitCode)
 }
 
 __declspec(noinline)
-static void hook_ExitProcess(UINT uExitCode)
+void hook_ExitProcess(UINT uExitCode)
 {
     PELoader* loader = getPELoaderPointer();
 
@@ -1228,7 +1271,45 @@ static void hook_ExitProcess(UINT uExitCode)
 }
 
 __declspec(noinline)
-static void hook_msvcrt_exit(int exitcode)
+int hook_msvcrt_wgetmainargs(
+    int* argc, uint16*** argv, uint16*** env, int doWildCard, void* startInfo
+)
+{
+    PELoader* loader = getPELoaderPointer();
+
+    dbg_log("[PE Loader]", "call __wgetmainargs");
+
+    // find msvcrt.__wgetmainargs
+#ifdef _WIN64
+    uint hash = 0x1C3CFAD70CBF5CC3;
+    uint key  = 0x2443BB3D37654188;
+#elif _WIN32
+    uint hash = 0xA5C5AAB3;
+    uint key  = 0x3B5D5009;
+#endif
+    wgetmainargs_t wgetmainargs = loader->Config.FindAPI(hash, key);
+    if (wgetmainargs == NULL)
+    {
+        return -1;
+    }
+
+    // call original function to process other arguments
+    int ret = wgetmainargs(argc, argv, env, doWildCard, startInfo);
+    // parse and replace argc, argv 
+    uint16 empty[] = { 0x0000 };
+    int nArgc = 0;
+    LPWSTR* nArgv = hook_CommandLineToArgvW(empty, &nArgc);
+    if (nArgv == NULL)
+    {
+        return -1;
+    }
+    *argc = nArgc;
+    *argv = nArgv;
+    return ret;
+}
+
+__declspec(noinline)
+void hook_msvcrt_exit(int exitcode)
 {
     hook_ExitProcess((UINT)exitcode);
 }
