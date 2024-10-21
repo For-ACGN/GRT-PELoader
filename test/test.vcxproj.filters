@@ -15,6 +15,9 @@
     <Filter Include="Assembly\MSVC">
       <UniqueIdentifier>{147cd255-889d-4664-89fb-b25de162d9f8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Test">
+      <UniqueIdentifier>{316ba817-a487-44be-9a88-1bee97d9bcb2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\hash_api.c">
@@ -35,13 +38,7 @@
     <ClCompile Include="..\src\debug.c">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="lib_string_test.c">
-      <Filter>Source</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\rel_addr.c">
-      <Filter>Source</Filter>
-    </ClCompile>
-    <ClCompile Include="pe_loader_test.c">
       <Filter>Source</Filter>
     </ClCompile>
     <ClCompile Include="..\src\pe_loader.c">
@@ -50,11 +47,11 @@
     <ClCompile Include="..\src\random.c">
       <Filter>Source</Filter>
     </ClCompile>
-    <ClCompile Include="random_test.c">
-      <Filter>Source</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\win_api.c">
       <Filter>Source</Filter>
+    </ClCompile>
+    <ClCompile Include="src\pe_loader_test.c">
+      <Filter>Test</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

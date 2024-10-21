@@ -17,12 +17,13 @@ bool TestInitPELoader()
     // read PE image file
 #ifdef _WIN64
     // FILE* file = fopen("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.exe", "rb");
-    FILE* file = fopen("C:\\Windows\\System32\\cmd.exe", "rb");
+    // FILE* file = fopen("C:\\Windows\\System32\\cmd.exe", "rb");
     // FILE* file = fopen("test_x64.exe", "rb");
     // FILE* file = fopen("E:\\Temp\\go_amd64.exe", "rb");
     // FILE* file = fopen("E:\\Temp\\rust_x64.exe", "rb");
     // FILE* file = fopen("testdata\\rust_x64.exe", "rb");
-    // FILE* file = fopen("testdata\\go_amd64.exe", "rb");
+    FILE* file = fopen("testdata\\go_amd64.exe", "rb");
+    // FILE* file = fopen("E:\\Temp\\hash.exe", "rb");
 #elif _WIN32
     FILE* file = fopen("testdata\\go_386.exe", "rb");
     // FILE* file = fopen("testdata\\rust_x86.exe", "rb");
@@ -72,7 +73,6 @@ bool TestInitPELoader()
     LPWSTR cmdLineW = L"loader.exe -p1 123 -p2 \"test\"";
 
     PELoader_Cfg cfg = {
-
     #ifdef NO_RUNTIME
         .FindAPI = &FindAPI,
     #else

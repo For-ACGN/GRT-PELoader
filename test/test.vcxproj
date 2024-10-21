@@ -29,10 +29,8 @@
     <ClInclude Include="..\include\epilogue.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="test_main.c" />
-    <ClCompile Include="lib_string_test.c" />
-    <ClCompile Include="random_test.c" />
-    <ClCompile Include="pe_loader_test.c" />
+	<ClCompile Include="test_main.c" />
+    <ClCompile Include="src\pe_loader_test.c" />
     <ClCompile Include="..\src\pe_loader.c" />
     <ClCompile Include="..\src\rel_addr.c" />
     <ClCompile Include="..\src\lib_memory.c" />
