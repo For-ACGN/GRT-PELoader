@@ -1,5 +1,6 @@
 #include "c_types.h"
 #include "windows_t.h"
+#include "msvcrt_t.h"
 #include "pe_image.h"
 #include "rel_addr.h"
 #include "lib_string.h"
@@ -57,6 +58,8 @@ typedef struct {
     uintptr ImageBase;
     uint32  ImageSize;
     bool    IsDLL;
+
+
 
     // store TLS callback list
     TLSCallback_t* TLSList;
@@ -435,7 +438,7 @@ static errno loadPEImage(PELoader* loader)
 static bool parsePEImage(PELoader* loader)
 {
     uintptr imageAddr = (uintptr)(loader->Config.Image);
-    // check PE file header
+    // check image file header
     if (imageAddr == 0)
     {
         return false;
@@ -448,13 +451,15 @@ static bool parsePEImage(PELoader* loader)
     {
         return false;
     }
-    uint32 peOffset = *(uint32*)(imageAddr + 60);
-    // parse FileHeader
-    uint16 numSections     = *(uint16*)(imageAddr + peOffset + 6);
-    uint16 optHeaderSize   = *(uint16*)(imageAddr + peOffset + 20);
-    uint16 characteristics = *(uint16*)(imageAddr + peOffset + 22);
-    // check PE file typee
-    bool isDLL = (characteristics & IMAGE_FILE_DLL) != 0;
+    // parse File Header
+    uint32 peOffset = *(uint32*)(imageAddr + 60); // skip DOS header
+    Image_FileHeader* fileHeader = (Image_FileHeader*)(imageAddr + peOffset + 4);
+
+
+
+    
+    // check PE image type
+    bool isDLL = (fileHeader->Characteristics & IMAGE_FILE_DLL) != 0;
     // parse OptionalHeader
 #ifdef _WIN64
     uint16 ddOffset = PE_OPT_HEADER_SIZE_64 - 16 * PE_DATA_DIRECTORY_SIZE;
@@ -471,15 +476,25 @@ static bool parsePEImage(PELoader* loader)
     uint32  imageSize = *(uint32*)(imageAddr + peOffset + 80);
     // store result
     loader->PEOffset      = peOffset;
-    loader->NumSections   = numSections;
-    loader->OptHeaderSize = optHeaderSize;
+    loader->NumSections   = fileHeader->NumberOfSections;
+    loader->OptHeaderSize = fileHeader->SizeOfOptionalHeader;
     loader->DataDir       = dataDir;
     loader->EntryPoint    = entryPoint;
     loader->ImageBase     = imageBase;
     loader->ImageSize     = imageSize;
     loader->IsDLL         = isDLL;
-    dbg_log("[PE Loader]", "characteristics: 0x%X", characteristics);
+
+    // TODO check PE image architecture
+
     return true;
+}
+
+static errno checkPEImage(PELoader* loader)
+{
+
+    // dbg_log("[PE Loader]", "characteristics: 0x%X", fileHeader->Characteristics);
+
+    return NO_ERROR;
 }
 
 static bool mapSections(PELoader* loader)
@@ -527,19 +542,21 @@ static void prepareImportTable(PELoader* loader)
 {
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
-    uintptr offset = dataDir + IMAGE_DIRECTORY_ENTRY_IMPORT * PE_DATA_DIRECTORY_SIZE;
+    uintptr ddAddr  = dataDir + IMAGE_DIRECTORY_ENTRY_IMPORT * PE_DATA_DIRECTORY_SIZE;
+    Image_DataDirectory dd = *(Image_DataDirectory*)(ddAddr);
 
-    loader->ImportTable     = peImage + *(uint32*)(offset);
-    loader->ImportTableSize = *(uint32*)(offset+ 4 );
+    loader->ImportTable     = peImage + dd.VirtualAddress;
+    loader->ImportTableSize = dd.Size;
 }
 
 static bool fixRelocTable(PELoader* loader)
 {
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
-    uintptr offset  = dataDir + IMAGE_DIRECTORY_ENTRY_BASERELOC * PE_DATA_DIRECTORY_SIZE;
-    uintptr relocTable = peImage + *(uint32*)(offset);
-    uint32  tableSize  = *(uint32*)(offset + 4);
+    uintptr ddAddr  = dataDir + IMAGE_DIRECTORY_ENTRY_BASERELOC * PE_DATA_DIRECTORY_SIZE;
+    Image_DataDirectory dd = *(Image_DataDirectory*)(ddAddr);
+    uintptr relocTable = peImage + dd.VirtualAddress;
+    uint32  tableSize  = dd.Size;
     // check need relocation
     if (tableSize == 0)
     {
@@ -592,9 +609,10 @@ static bool initTLSCallback(PELoader* loader)
 {
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
-    uintptr offset  = dataDir + IMAGE_DIRECTORY_ENTRY_TLS * PE_DATA_DIRECTORY_SIZE;
-    uintptr tlsTable  = peImage + *(uint32*)(offset);
-    uint32  tableSize = *(uint32*)(offset + 4);
+    uintptr ddAddr  = dataDir + IMAGE_DIRECTORY_ENTRY_TLS * PE_DATA_DIRECTORY_SIZE;
+    Image_DataDirectory dd = *(Image_DataDirectory*)(ddAddr);
+    uintptr tlsTable  = peImage + dd.VirtualAddress;
+    uint32  tableSize = dd.Size;
     // check need initialize tls callback
     if (tableSize == 0)
     {
@@ -1305,6 +1323,7 @@ int hook_msvcrt_wgetmainargs(
     }
     *argc = nArgc;
     *argv = nArgv;
+    // TODO call LocalFree about nArgv
     return ret;
 }
 
