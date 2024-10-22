@@ -15,6 +15,7 @@
     <ClInclude Include="test.h" />
     <ClInclude Include="..\include\c_types.h" />
     <ClInclude Include="..\include\windows_t.h" />
+	<ClInclude Include="..\include\msvcrt_t.h" />
     <ClInclude Include="..\include\pe_image.h" />
     <ClInclude Include="..\include\rel_addr.h" />
     <ClInclude Include="..\include\lib_memory.h" />
@@ -29,7 +30,7 @@
     <ClInclude Include="..\include\epilogue.h" />
   </ItemGroup>
   <ItemGroup>
-	<ClCompile Include="test_main.c" />
+    <ClCompile Include="test_main.c" />
     <ClCompile Include="src\pe_loader_test.c" />
     <ClCompile Include="..\src\pe_loader.c" />
     <ClCompile Include="..\src\rel_addr.c" />
