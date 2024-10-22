@@ -30,20 +30,19 @@ static void init()
     CreateFileA  = FindAPI_A("kernel32.dll", "CreateFileA");
     WriteFile    = FindAPI_A("kernel32.dll", "WriteFile");
     CloseHandle  = FindAPI_A("kernel32.dll", "CloseHandle");
+
+    HMODULE hModule = LoadLibraryA("msvcrt.dll");
+    if (hModule == NULL)
+    {
+        return;
+    }
+    printf_s = FindAPI_A("msvcrt.dll", "printf_s");
 }
 
 #pragma comment(linker, "/ENTRY:EntryPoint")
 int EntryPoint()
 {
     init();
-
-    HMODULE hModule = LoadLibraryA("msvcrt.dll");
-    if (hModule == NULL)
-    {
-        return -1;
-    }
-    printf_s = FindAPI_A("msvcrt.dll", "printf_s");
-
     if (!saveShellcode())
     {
         return 1;
@@ -52,7 +51,7 @@ int EntryPoint()
     {
         return 2;
     }
-    printf_s("save shellcode successfully\n");
+    printf_s("build shellcode successfully\n");
     return 0;
 }
 
@@ -91,12 +90,12 @@ bool saveShellcode()
     );
     if (hFile == INVALID_HANDLE_VALUE)
     {
-        printf_s("failed to create shellcode output file: 0x%X\n", GetLastErrno());
+        printf_s("failed to create output file: 0x%X\n", GetLastErrno());
         return false;
     }
     if (!WriteFile(hFile, (byte*)begin, (DWORD)size, NULL, NULL))
     {
-        printf_s("failed to save shellcode: 0x%X\n", GetLastErrno());
+        printf_s("failed to write shellcode: 0x%X\n", GetLastErrno());
         return false;
     }
     if (!CloseHandle(hFile))
@@ -110,7 +109,7 @@ bool saveShellcode()
 bool testShellcode()
 {
     errno errno = Boot();
-    if (errno != ERR_LOADER_PARSE_PE_IMAGE)
+    if (errno != ERR_INVALID_LOAD_MODE)
     {
         printf_s("unexpected boot errno: 0x%X\n", errno);
         return false;
