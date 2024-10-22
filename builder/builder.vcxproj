@@ -15,6 +15,7 @@
     <ClInclude Include="..\boot\boot.h" />
     <ClInclude Include="..\include\c_types.h" />
     <ClInclude Include="..\include\windows_t.h" />
+	<ClInclude Include="..\include\msvcrt_t.h" />
     <ClInclude Include="..\include\pe_image.h" />
     <ClInclude Include="..\include\lib_memory.h" />
     <ClInclude Include="..\include\lib_string.h" />
