@@ -10,6 +10,7 @@
 #define PE_SECTION_HEADER_SIZE   40
 #define PE_DATA_DIRECTORY_SIZE   8
 
+#define IMAGE_FILE_RELOCS_STRIPPED  0x0001
 #define IMAGE_FILE_EXECUTABLE_IMAGE 0x0002
 #define IMAGE_FILE_DLL              0x2000
 
@@ -35,6 +36,11 @@
 #define IMAGE_REL_BASED_ABSOLUTE 0
 #define IMAGE_REL_BASED_HIGHLOW  3 
 #define IMAGE_REL_BASED_DIR64    10
+
+typedef struct {
+    DWORD VirtualAddress;
+    DWORD Size;
+} Image_DataDirectory;
 
 typedef struct {
     DWORD OriginalFirstThunk;
