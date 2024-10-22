@@ -205,6 +205,11 @@ typedef LPSTR (*GetCommandLineA_t)();
 
 typedef LPWSTR (*GetCommandLineW_t)();
 
+typedef LPWSTR* (*CommandLineToArgvW_t)
+(
+    LPCWSTR lpCmdLine, int* pNumArgs
+);
+
 typedef HANDLE (*GetStdHandle_t)
 (
     DWORD nStdHandle
