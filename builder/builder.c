@@ -1,10 +1,10 @@
 #include "c_types.h"
+#include "windows_t.h"
 #include "hash_api.h"
 #include "errno.h"
 #include "boot.h"
 #include "pe_loader.h"
 #include "runtime.h"
-#include "epilogue.h"
 
 // NOT using stdio is to ensure that no runtime instructions
 // are introduced to avoid compiler optimization link errors
