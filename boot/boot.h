@@ -2,6 +2,7 @@
 #define BOOT_H
 
 #include "errno.h"
+#include "pe_loader.h"
 
 #define MODE_EMBED_IMAGE 1
 #define MODE_LOCAL_FILE  2
@@ -36,6 +37,6 @@
 #define ERR_INVALID_EMBED_IMAGE   0x7F000202
 #define ERR_ERASE_ARGUMENTS       0x7F000301
 
-errno Boot();
+PELoader_M* Boot();
 
 #endif // BOOT_H
