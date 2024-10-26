@@ -16,10 +16,8 @@
 #define MAIN_MEM_PAGE_SIZE 4096
 
 typedef struct {
-    // set the under Gleam-RT
-    Runtime_M* Runtime;
-
     // store config from argument
+    Runtime_M*   Runtime;
     PELoader_Cfg Config;
 
     // API addresses
@@ -52,16 +50,18 @@ typedef struct {
 
     // store PE image information
     uintptr PEImage;
-    uint32  PEOffset;
-    uint16  NumSections;
-    uint16  OptHeaderSize;
     uintptr DataDir;
     uintptr ImportTable;
     uint32  ImportTableSize;
     uintptr EntryPoint;
     uintptr ImageBase;
     uint32  ImageSize;
+    uintptr Section;
     bool    IsDLL;
+
+    // store PE image NT header
+    Image_FileHeader FileHeader;
+    OptionalHeader   OptHeader;
 
     // store TLS callback list
     TLSCallback_t* TLSList;
@@ -96,6 +96,7 @@ static bool  recoverPELoaderPointer(PELoader* loader);
 static errno initPELoaderEnvironment(PELoader* loader);
 static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
+static bool  checkPEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
 static void  prepareImportTable(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
@@ -158,7 +159,7 @@ PELoader_M* InitPELoader(Runtime_M* runtime, PELoader_Cfg* cfg)
     // set structure address
     uintptr address = (uintptr)memPage;
     uintptr loaderAddr = address + 1000 + RandUintN(address, 128);
-    uintptr moduleAddr = address + 2000 + RandUintN(address, 128);
+    uintptr moduleAddr = address + 3000 + RandUintN(address, 128);
     // initialize structure
     PELoader* loader = (PELoader*)loaderAddr;
     mem_init(loader, sizeof(PELoader));
@@ -422,6 +423,10 @@ static errno loadPEImage(PELoader* loader)
     {
         return ERR_LOADER_PARSE_PE_IMAGE;
     }
+    if (!checkPEImage(loader))
+    {
+        return ERR_LOADER_CHECK_PE_IMAGE;
+    }
     if (!mapSections(loader))
     {
         return ERR_LOADER_MAP_SECTIONS;
@@ -459,48 +464,51 @@ static bool parsePEImage(PELoader* loader)
     {
         return false;
     }
-    // parse File Header
-    uint32 peOffset = *(uint32*)(imageAddr + 60); // skip DOS header
-    Image_FileHeader* fileHeader = (Image_FileHeader*)(imageAddr + peOffset + 4);
-
-    
-    // check PE image type
-    bool isDLL = (fileHeader->Characteristics & IMAGE_FILE_DLL) != 0;
+    // skip DOS header
+    uint32  peOffset = *(uint32*)(imageAddr + 60);
+    uintptr base = imageAddr + peOffset + PE_SIGNATURE_SIZE;
+    // parse FileHeader
+    Image_FileHeader* fileHeader = (Image_FileHeader*)(base);
     // parse OptionalHeader
+    uintptr header = base + sizeof(Image_FileHeader);
 #ifdef _WIN64
-    uint16 ddOffset = PE_OPT_HEADER_SIZE_64 - 16 * PE_DATA_DIRECTORY_SIZE;
+    OptionalHeader* optHeader = (OptionalHeader64*)(header);
 #elif _WIN32
-    uint16 ddOffset = PE_OPT_HEADER_SIZE_32 - 16 * PE_DATA_DIRECTORY_SIZE;
+    OptionalHeader* optHeader = (OptionalHeader32*)(header);
 #endif
-    uintptr dataDir    = imageAddr + peOffset + PE_FILE_HEADER_SIZE + ddOffset;
-    uint32  entryPoint = *(uint32*)(imageAddr + peOffset + 40);
-#ifdef _WIN64
-    uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 48);
-#elif _WIN32
-    uintptr imageBase = *(uintptr*)(imageAddr + peOffset + 52);
-#endif
-    uint32  imageSize = *(uint32*)(imageAddr + peOffset + 80);
+    // calculate data directory offset
+    uint16  ddOffset = arrlen(optHeader->DataDirectory) * sizeof(Image_DataDirectory);
+    uintptr dataDir  = header + sizeof(OptionalHeader) - ddOffset;
+    // calculate the address of the first Section
+    uintptr section = header + sizeof(OptionalHeader);
     // store result
-    loader->PEOffset      = peOffset;
-    loader->NumSections   = fileHeader->NumberOfSections;
-    loader->OptHeaderSize = fileHeader->SizeOfOptionalHeader;
-    loader->DataDir       = dataDir;
-    loader->EntryPoint    = entryPoint;
-    loader->ImageBase     = imageBase;
-    loader->ImageSize     = imageSize;
-    loader->IsDLL         = isDLL;
-
-    // TODO check PE image architecture
-
+    WORD characteristics = fileHeader->Characteristics;
+    loader->DataDir    = dataDir;
+    loader->EntryPoint = optHeader->AddressOfEntryPoint;
+    loader->ImageBase  = optHeader->ImageBase;
+    loader->ImageSize  = optHeader->SizeOfImage;
+    loader->Section    = section;
+    loader->IsDLL      = (characteristics & IMAGE_FILE_DLL) != 0;
+    loader->FileHeader = *fileHeader;
+    loader->OptHeader  = *optHeader;
+    dbg_log("[PE Loader]", "characteristics: 0x%X", characteristics);
     return true;
 }
 
-static errno checkPEImage(PELoader* loader)
+static bool checkPEImage(PELoader* loader)
 {
-
-    // dbg_log("[PE Loader]", "characteristics: 0x%X", fileHeader->Characteristics);
-
-    return NO_ERROR;
+    Image_FileHeader* FileHeader = &loader->FileHeader;
+    // check PE image architecture
+#ifdef _WIN64
+    uint16 arch = IMAGE_FILE_MACHINE_AMD64;
+#elif _WIN32
+    uint16 arch = IMAGE_FILE_MACHINE_I386;
+#endif
+    if (arch != FileHeader->Machine)
+    {
+        return false;
+    }   
+    return true;
 }
 
 static bool mapSections(PELoader* loader)
@@ -526,10 +534,8 @@ static bool mapSections(PELoader* loader)
     // map PE image sections to the memory
     uintptr peImage   = (uintptr)mem;
     uintptr imageAddr = (uintptr)(loader->Config.Image);
-    uint32  peOffset  = loader->PEOffset;
-    uint16  optHeaderSize = loader->OptHeaderSize;
-    uintptr section = imageAddr + peOffset + PE_FILE_HEADER_SIZE + optHeaderSize;
-    for (uint16 i = 0; i < loader->NumSections; i++)
+    uintptr section   = loader->Section;
+    for (uint16 i = 0; i < loader->FileHeader.NumberOfSections; i++)
     {
         uint32 virtualAddress   = *(uint32*)(section + 12);
         uint32 sizeOfRawData    = *(uint32*)(section + 16);
