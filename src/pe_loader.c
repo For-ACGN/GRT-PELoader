@@ -9,12 +9,16 @@
 #include "win_api.h"
 #include "random.h"
 #include "errno.h"
+#include "runtime.h"
 #include "pe_loader.h"
 #include "debug.h"
 
 #define MAIN_MEM_PAGE_SIZE 4096
 
 typedef struct {
+    // set the under Gleam-RT
+    Runtime_M* Runtime;
+
     // store config from argument
     PELoader_Cfg Config;
 
@@ -58,8 +62,6 @@ typedef struct {
     uintptr ImageBase;
     uint32  ImageSize;
     bool    IsDLL;
-
-
 
     // store TLS callback list
     TLSCallback_t* TLSList;
@@ -139,7 +141,7 @@ int  hook_msvcrt_wgetmainargs(
 );
 void hook_msvcrt_exit(int exitcode);
 
-PELoader_M* InitPELoader(PELoader_Cfg* cfg)
+PELoader_M* InitPELoader(Runtime_M* runtime, PELoader_Cfg* cfg)
 {
     if (!InitDebugger())
     {
@@ -161,7 +163,8 @@ PELoader_M* InitPELoader(PELoader_Cfg* cfg)
     PELoader* loader = (PELoader*)loaderAddr;
     mem_init(loader, sizeof(PELoader));
     // store config and context
-    loader->Config = *cfg;
+    loader->Runtime = runtime;
+    loader->Config  = *cfg;
     loader->MainMemPage = memPage;
     // initialize loader
     DWORD oldProtect = 0;
@@ -573,10 +576,22 @@ static bool initDelayload(PELoader* loader)
         {
             break;
         }
-        // TODO check dll is loaded
-        LPSTR dllName = (LPSTR)(peImage + dld->DllNameRVA);
-        dbg_log("[PE Loader]", "LoadLibrary: %s", dllName);
-        HMODULE hModule = loader->LoadLibraryA(dllName);
+        // check the target DLL is loaded
+        LPSTR  dllName  = (LPSTR)(peImage + dld->DllNameRVA);
+        LPWSTR dllNameW = loader->Runtime->WinBase.ANSIToUTF16(dllName);
+        if (dllNameW == NULL)
+        {
+            return false;
+        }
+        HMODULE hModule = GetModuleHandle(dllNameW);
+        loader->Runtime->Memory.Free(dllNameW);
+        if (hModule == NULL)
+        {
+            hModule = loader->LoadLibraryA(dllName);
+            dbg_log("[PE Loader]", "Lazy LoadLibrary: %s", dllName);
+        } else {
+            dbg_log("[PE Loader]", "Already LoadLibrary: %s", dllName);
+        }
         if (hModule == NULL)
         {
             return false;
