@@ -2,9 +2,9 @@
 #include "windows_t.h"
 #include "hash_api.h"
 #include "errno.h"
-#include "boot.h"
-#include "pe_loader.h"
 #include "runtime.h"
+#include "pe_loader.h"
+#include "boot.h"
 
 // NOT using stdio is to ensure that no runtime instructions
 // are introduced to avoid compiler optimization link errors
@@ -108,7 +108,13 @@ bool saveShellcode()
 
 bool testShellcode()
 {
-    errno errno = Boot();
+    PELoader_M* pe_loader = Boot();
+    if (pe_loader != NULL)
+    {
+        printf_s("unexpected boot return value\n");
+        return false;
+    }
+    errno errno = GetLastErrno();
     if (errno != ERR_INVALID_LOAD_MODE)
     {
         printf_s("unexpected boot errno: 0x%X\n", errno);
