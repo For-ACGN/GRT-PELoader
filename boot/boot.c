@@ -61,7 +61,7 @@ errno Boot()
         {
             break;
         }
-        loader = InitPELoader(&config);
+        loader = InitPELoader(runtime, &config);
         if (loader == NULL)
         {
             err = GetLastErrno();
