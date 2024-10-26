@@ -5,6 +5,7 @@
 #include "windows_t.h"
 #include "hash_api.h"
 #include "errno.h"
+#include "runtime.h"
 
 typedef errno (*Execute_t)();
 typedef errno (*Exit_t)(uint exitCode);
@@ -18,7 +19,7 @@ typedef struct {
     void* Image;
 
     // for hook GetCommandLineA and GetCommandLineW,
-    // if it is NULL, call original GetCommandLine
+    // if them are NULL, call original GetCommandLine
     void* CommandLineA;
     void* CommandLineW;
 
@@ -58,6 +59,6 @@ typedef struct {
 // InitPELoader is used to initialize PE loader, it will load PE file
 // from memory, but it will not run it, caller must use PELoader_M.
 // If failed to initialize, use GetLastError to get error code.
-PELoader_M* InitPELoader(PELoader_Cfg* cfg);
+PELoader_M* InitPELoader(Runtime_M* runtime, PELoader_Cfg* cfg);
 
 #endif // PE_LOADER_H
