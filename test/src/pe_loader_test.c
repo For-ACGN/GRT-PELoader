@@ -14,48 +14,6 @@ static void* copyShellcode();
 
 bool TestInitPELoader()
 {
-    // read PE image file
-#ifdef _WIN64
-    // FILE* file = fopen("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.exe", "rb");
-    // FILE* file = fopen("C:\\Windows\\System32\\cmd.exe", "rb");
-    // FILE* file = fopen("test_x64.exe", "rb");
-    // FILE* file = fopen("E:\\Temp\\go_amd64.exe", "rb");
-    // FILE* file = fopen("E:\\Temp\\rust_x64.exe", "rb");
-    // FILE* file = fopen("testdata\\rust_x64.exe", "rb");
-    FILE* file = fopen("testdata\\go_amd64.exe", "rb");
-    // FILE* file = fopen("E:\\Temp\\hash.exe", "rb");
-#elif _WIN32
-    FILE* file = fopen("testdata\\go_386.exe", "rb");
-    // FILE* file = fopen("testdata\\rust_x86.exe", "rb");
-#endif
-    if (file == NULL)
-    {
-        printf_s("failed to open test pe file\n");
-        return false;
-    }
-    // get file size
-    fseek(file, 0, SEEK_END);
-    uint fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    // read file
-#ifdef _WIN64
-    uint64 hash = 0xB6A1D0D4A275D4B6;
-    uint64 key  = 0x64CB4D66EC0BEFD9;
-#elif _WIN32
-    uint32 hash = 0xC3DE112E;
-    uint32 key  = 0x8D9EA74F;
-#endif
-    VirtualAlloc_t virtualAlloc = FindAPI(hash, key);
-    LPVOID addr = virtualAlloc(0, fileSize, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
-    byte* buf = (byte*)addr;
-    uint n = fread(buf, fileSize, 1, file);
-    if (n != 1)
-    {
-        printf_s("failed to read test pe file\n");
-        return false;
-    }
-    fclose(file);
-
     Runtime_Opts opts = {
         .BootInstAddress     = NULL,
         .NotEraseInstruction = false,
@@ -66,6 +24,27 @@ bool TestInitPELoader()
     if (runtime == NULL)
     {
         printf_s("failed to initialize runtime: 0x%X\n", GetLastErrno());
+        return false;
+    }
+
+    // read PE image file
+#ifdef _WIN64
+    LPSTR file = "testdata\\go_amd64.exe";
+    // LPSTR file = "testdata\\rust_x64.exe";
+    // LPSTR file = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.exe";
+    // LPSTR file = "C:\\Windows\\System32\\cmd.exe";
+    // LPSTR file = "E:\\Temp\\go_amd64.exe";
+    // LPSTR file = "E:\\Temp\\rust_x64.exe";
+    // LPSTR file = "E:\\Temp\\hash.exe";
+#elif _WIN32
+    LPSTR file = "testdata\\go_386.exe";
+    // LPSTR file = "testdata\\rust_x86.exe";
+#endif
+    byte* buf; uint size;
+    errno err = runtime->WinFile.ReadFileA(file, &buf, &size);
+    if (err != NO_ERROR)
+    {
+        printf_s("failed to open test pe file: 0x%X\n", err);
         return false;
     }
 
@@ -85,17 +64,17 @@ bool TestInitPELoader()
         .StdInput     = NULL,
         .StdOutput    = NULL,
         .StdError     = NULL,
-        .WaitMain     = false,
+        .WaitMain     = true,
 
         .NotEraseInstruction = true,
         .NotAdjustProtect    = false,
     };
 #ifdef SHELLCODE_MODE
-    typedef PELoader_M* (*InitPELoader_t)(PELoader_Cfg* cfg);
+    typedef PELoader_M* (*InitPELoader_t)(Runtime_M* runtime, PELoader_Cfg* cfg);
     InitPELoader_t initPELoader = copyShellcode();
-    pe_loader = initPELoader(&cfg);
+    pe_loader = initPELoader(runtime, &cfg);
 #else
-    pe_loader = InitPELoader(&cfg);
+    pe_loader = InitPELoader(runtime, &cfg);
 #endif // SHELLCODE_MODE
     if (pe_loader == NULL)
     {
@@ -103,7 +82,7 @@ bool TestInitPELoader()
         return false;
     }
     // erase PE image after initialize
-    RandBuffer(buf, fileSize);
+    RandBuffer(buf, size);
     return true;
 }
 
