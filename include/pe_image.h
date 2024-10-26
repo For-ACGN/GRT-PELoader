@@ -4,11 +4,12 @@
 #include "c_types.h"
 #include "windows_t.h"
 
-#define PE_FILE_HEADER_SIZE    24
-#define PE_OPT_HEADER_SIZE_64  240
-#define PE_OPT_HEADER_SIZE_32  224
+#define PE_SIGNATURE_SIZE      4
 #define PE_SECTION_HEADER_SIZE 40
 #define PE_DATA_DIRECTORY_SIZE 8
+
+#define IMAGE_FILE_MACHINE_I386  0x014C
+#define IMAGE_FILE_MACHINE_AMD64 0x8664
 
 #define IMAGE_FILE_RELOCS_STRIPPED  0x0001
 #define IMAGE_FILE_EXECUTABLE_IMAGE 0x0002
@@ -57,6 +58,81 @@ typedef struct {
     DWORD VirtualAddress;
     DWORD Size;
 } Image_DataDirectory;
+
+typedef struct {
+    WORD  Magic;
+    BYTE  MajorLinkerVersion;
+    BYTE  MinorLinkerVersion;
+    DWORD SizeOfCode;
+    DWORD SizeOfInitializedData;
+    DWORD SizeOfUninitializedData;
+    DWORD AddressOfEntryPoint;
+    DWORD BaseOfCode;
+    DWORD BaseOfData;
+    DWORD ImageBase;
+    DWORD SectionAlignment;
+    DWORD FileAlignment;
+    WORD  MajorOperatingSystemVersion;
+    WORD  MinorOperatingSystemVersion;
+    WORD  MajorImageVersion;
+    WORD  MinorImageVersion;          
+	WORD  MajorSubsystemVersion;
+    WORD  MinorSubsystemVersion;      
+	DWORD Win32VersionValue;      
+	DWORD SizeOfImage;          
+	DWORD SizeOfHeaders;
+    DWORD CheckSum;             
+	WORD  Subsystem;                  
+	WORD  DllCharacteristics;
+    DWORD SizeOfStackReserve;        
+	DWORD SizeOfStackCommit;        
+	DWORD SizeOfHeapReserve;         
+	DWORD SizeOfHeapCommit;         
+	DWORD LoaderFlags;          
+    DWORD NumberOfRvaAndSizes;
+
+	Image_DataDirectory DataDirectory[16];
+} OptionalHeader32;
+
+typedef struct {
+    WORD  Magic;
+    BYTE  MajorLinkerVersion;
+    BYTE  MinorLinkerVersion;
+    DWORD SizeOfCode;
+    DWORD SizeOfInitializedData;
+    DWORD SizeOfUninitializedData;
+    DWORD AddressOfEntryPoint;
+    DWORD BaseOfCode;
+    QWORD ImageBase;
+    DWORD SectionAlignment;
+    DWORD FileAlignment;
+    WORD  MajorOperatingSystemVersion;
+    WORD  MinorOperatingSystemVersion;
+    WORD  MajorImageVersion;
+    WORD  MinorImageVersion;
+    WORD  MajorSubsystemVersion;
+    WORD  MinorSubsystemVersion;      
+	DWORD Win32VersionValue;      
+	DWORD SizeOfImage;          
+	DWORD SizeOfHeaders;
+    DWORD CheckSum;              
+	WORD  Subsystem;
+    WORD  DllCharacteristics;
+    QWORD SizeOfStackReserve;
+    QWORD SizeOfStackCommit;
+    QWORD SizeOfHeapReserve;
+    QWORD SizeOfHeapCommit;
+    DWORD LoaderFlags;
+    DWORD NumberOfRvaAndSizes;
+
+    Image_DataDirectory DataDirectory[16];
+} OptionalHeader64;
+
+#ifdef _WIN64
+    typedef OptionalHeader64 OptionalHeader;
+#elif _WIN32
+    typedef OptionalHeader32 OptionalHeader;
+#endif
 
 typedef struct {
     DWORD OriginalFirstThunk;
