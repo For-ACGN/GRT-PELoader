@@ -17,7 +17,7 @@ static void* loadImageFromEmbed(Runtime_M* runtime, byte* config);
 static void* loadImageFromFile(Runtime_M* runtime, byte* config);
 static void* loadImageFromHTTP(Runtime_M* runtime, byte* config);
 
-errno Boot()
+PELoader_M* Boot()
 {
     // initialize Gleam-RT for PE Loader
     Runtime_Opts options = {
@@ -29,12 +29,13 @@ errno Boot()
     errno elo = loadOption(&options);
     if (elo != NO_ERROR)
     {
-        return elo;
+        SetLastErrno(elo);
+        return NULL;
     }
     Runtime_M* runtime = InitRuntime(&options);
     if (runtime == NULL)
     {
-        return GetLastErrno();
+        return NULL;
     }
 
     // load config and initialize PE Loader
@@ -78,19 +79,20 @@ errno Boot()
     if (err != NO_ERROR || loader == NULL)
     {
         runtime->Core.Exit();
-        return err;
+        SetLastErrno(err);
+        return NULL;
     }
 
-    // execute PE file
+    // execute PE image
     errno ele = loader->Execute();
     if (ele != NO_ERROR && err == NO_ERROR)
     {
         err = ele;
     }
-    // TODO it
     if (!config.WaitMain)
     {
-        return NO_ERROR;
+        SetLastErrno(err);
+        return loader;
     }
     // destroy pe loader and exit runtime
     errno eld = loader->Destroy();
@@ -103,14 +105,11 @@ errno Boot()
     {
         err = ere;
     }
-    // set exit code from pe image
-    // if (exitCode != 0 && err == NO_ERROR)
-    // {
-    //     err = (errno)exitCode;
-    // }
-    return err;
+    SetLastErrno(err);
+    return loader;
 }
 
+__declspec(noinline)
 static errno loadOption(Runtime_Opts* options)
 {
     uintptr stub = (uintptr)(GetFuncAddr(&Argument_Stub));
@@ -127,6 +126,7 @@ static errno loadOption(Runtime_Opts* options)
     return NO_ERROR;
 }
 
+__declspec(noinline)
 static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
 {
     uint32 size;
