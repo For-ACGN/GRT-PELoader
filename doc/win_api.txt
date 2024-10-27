@@ -20,5 +20,6 @@ https://learn.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-close
 https://learn.microsoft.com/en-us/windows/win32/api/processenv/nf-processenv-getcommandlinea
 https://learn.microsoft.com/en-us/windows/win32/api/processenv/nf-processenv-getcommandlinew
 https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-commandlinetoargvw
+https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-localfree
 https://learn.microsoft.com/en-us/windows/console/getstdhandle
 https://learn.microsoft.com/en-us/cpp/c-runtime-library/getmainargs-wgetmainargs?view=msvc-170
