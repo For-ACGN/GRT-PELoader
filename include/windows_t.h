@@ -21,6 +21,7 @@ typedef void* POINTER;
 typedef void* HMODULE;
 typedef void* HANDLE;
 typedef void* FARPROC;
+typedef void* HLOCAL;
 
 typedef void*   LPVOID;
 typedef uint8*  LPSTR;
@@ -208,6 +209,11 @@ typedef LPWSTR (*GetCommandLineW_t)();
 typedef LPWSTR* (*CommandLineToArgvW_t)
 (
     LPCWSTR lpCmdLine, int* pNumArgs
+);
+
+typedef HLOCAL (*LocalFree_t)
+(
+    HLOCAL hMem
 );
 
 typedef HANDLE (*GetStdHandle_t)
