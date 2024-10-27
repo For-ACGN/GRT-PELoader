@@ -4,9 +4,11 @@
 #include "c_types.h"
 #include "windows_t.h"
 
-#define PE_SIGNATURE_SIZE      4
-#define PE_SECTION_HEADER_SIZE 40
-#define PE_DATA_DIRECTORY_SIZE 8
+#define DOS_HEADER_SIZE 64
+
+#define NT_HEADER_SIGNATURE_SIZE 4
+#define PE_SECTION_HEADER_SIZE   40
+#define PE_DATA_DIRECTORY_SIZE   8
 
 #define IMAGE_FILE_MACHINE_I386  0x014C
 #define IMAGE_FILE_MACHINE_AMD64 0x8664
