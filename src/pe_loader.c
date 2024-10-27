@@ -38,6 +38,7 @@ typedef struct {
     CloseHandle_t           CloseHandle;
     GetCommandLineA_t       GetCommandLineA;
     GetCommandLineW_t       GetCommandLineW;
+    LocalFree_t             LocalFree;
     GetStdHandle_t          GetStdHandle;
     ExitProcess_t           ExitProcess;
 
@@ -65,6 +66,9 @@ typedef struct {
 
     // store TLS callback list
     TLSCallback_t* TLSList;
+
+    // store special caller memory
+    LPWSTR* nArgvW;
 
     // write return value
     uint* ExitCode;
@@ -123,6 +127,7 @@ static void set_exit_code(uint code);
 static uint get_exit_code();
 static void set_running(bool run);
 static bool is_running();
+static void clean_run_data();
 
 LPSTR   hook_GetCommandLineA();
 LPWSTR  hook_GetCommandLineW();
@@ -136,7 +141,11 @@ void stub_ExecuteThread(LPVOID lpParameter);
 void hook_ExitThread(DWORD dwExitCode);
 void hook_ExitProcess(UINT uExitCode);
 
-int  hook_msvcrt_wgetmainargs(
+int hook_msvcrt_getmainargs(
+    int* argc, byte*** argv, byte*** env,
+    int doWildCard, void* startInfo
+);
+int hook_msvcrt_wgetmainargs(
     int* argc, uint16*** argv, uint16*** env,
     int doWildCard, void* startInfo
 );
@@ -294,6 +303,7 @@ static bool initPELoaderAPI(PELoader* loader)
         { 0xB23064DF64282DE1, 0xD62F5C65075FCCE8 }, // CloseHandle
         { 0xEF31896F2FACEC04, 0x0E670990125E8E48 }, // GetCommandLineA
         { 0x701EF754FFADBDC2, 0x6D5BE783B0AF5812 }, // GetCommandLineW
+        { 0xFCB18A0B702E8AB9, 0x8E1D5AE1A2FD9196 }, // LocalFree
         { 0x599C793AB3F4599E, 0xBBBA4AE31D6A6D8F }, // GetStdHandle
         { 0x131A9BBD85CB5E0D, 0x5126E3CBD1E0DB9A }, // ExitProcess
     };
@@ -316,6 +326,7 @@ static bool initPELoaderAPI(PELoader* loader)
         { 0x7DC545BC, 0xCBD67153 }, // CloseHandle
         { 0xA187476E, 0x5AF922F3 }, // GetCommandLineA
         { 0xC15EF07A, 0x47A945CE }, // GetCommandLineW
+        { 0x36B1013C, 0x0852225B }, // LocalFree    
         { 0xAE68A468, 0xD611C7F0 }, // GetStdHandle
         { 0x0C5D0A6C, 0xDB58404D }, // ExitProcess
     };
@@ -347,8 +358,9 @@ static bool initPELoaderAPI(PELoader* loader)
     loader->CloseHandle           = list[0x0E].proc;
     loader->GetCommandLineA       = list[0x0F].proc;
     loader->GetCommandLineW       = list[0x10].proc;
-    loader->GetStdHandle          = list[0x11].proc;
-    loader->ExitProcess           = list[0x12].proc;
+    loader->LocalFree             = list[0x11].proc;
+    loader->GetStdHandle          = list[0x12].proc;
+    loader->ExitProcess           = list[0x13].proc;
     return true;
 }
 
@@ -464,23 +476,23 @@ static bool parsePEImage(PELoader* loader)
     {
         return false;
     }
-    // skip DOS header
-    uint32  peOffset = *(uint32*)(imageAddr + 60);
-    uintptr base = imageAddr + peOffset + PE_SIGNATURE_SIZE;
+    // skip DOS stub
+    uint32  peOffset = *(uint32*)(imageAddr + DOS_HEADER_SIZE - 4);
+    uintptr peBase = imageAddr + peOffset + NT_HEADER_SIGNATURE_SIZE;
     // parse FileHeader
-    Image_FileHeader* fileHeader = (Image_FileHeader*)(base);
+    Image_FileHeader* fileHeader = (Image_FileHeader*)(peBase);
     // parse OptionalHeader
-    uintptr header = base + sizeof(Image_FileHeader);
+    uintptr headerAddr = peBase + sizeof(Image_FileHeader);
 #ifdef _WIN64
-    OptionalHeader* optHeader = (OptionalHeader64*)(header);
+    OptionalHeader* optHeader = (OptionalHeader64*)(headerAddr);
 #elif _WIN32
-    OptionalHeader* optHeader = (OptionalHeader32*)(header);
+    OptionalHeader* optHeader = (OptionalHeader32*)(headerAddr);
 #endif
     // calculate data directory offset
     uint16  ddOffset = arrlen(optHeader->DataDirectory) * sizeof(Image_DataDirectory);
-    uintptr dataDir  = header + sizeof(OptionalHeader) - ddOffset;
+    uintptr dataDir  = headerAddr + sizeof(OptionalHeader) - ddOffset;
     // calculate the address of the first Section
-    uintptr section = header + sizeof(OptionalHeader);
+    uintptr section = headerAddr + sizeof(OptionalHeader);
     // store result
     WORD characteristics = fileHeader->Characteristics;
     loader->DataDir    = dataDir;
@@ -491,7 +503,6 @@ static bool parsePEImage(PELoader* loader)
     loader->IsDLL      = (characteristics & IMAGE_FILE_DLL) != 0;
     loader->FileHeader = *fileHeader;
     loader->OptHeader  = *optHeader;
-    dbg_log("[PE Loader]", "characteristics: 0x%X", characteristics);
     return true;
 }
 
@@ -507,7 +518,8 @@ static bool checkPEImage(PELoader* loader)
     if (arch != FileHeader->Machine)
     {
         return false;
-    }   
+    }
+    dbg_log("[PE Loader]", "characteristics: 0x%X", FileHeader->Characteristics);
     return true;
 }
 
@@ -964,6 +976,7 @@ static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName)
         { 0x9B91E956B96D6389, 0xEBB723BF1CEE4569, GetFuncAddr(&hook_CreateThread)        },
         { 0x053D2B184D2AD724, 0x5DFCC08DACB101DD, GetFuncAddr(&hook_ExitThread)          },
         { 0x003837989C804A7A, 0x77BACCABEB6CE508, GetFuncAddr(&hook_ExitProcess)         },
+        { 0x8D91B93B7BFC89B4, 0x428A7543FADEEF29, GetFuncAddr(&hook_msvcrt_getmainargs) },
         { 0xB6627A6DDB0A9B1A, 0x729C834DB43EB70A, GetFuncAddr(&hook_msvcrt_wgetmainargs) },
         { 0x4B7D921A385FB3D2, 0xC579F5ED84E53139, GetFuncAddr(&hook_msvcrt_exit)         },
     };
@@ -977,6 +990,7 @@ static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName)
         { 0x0465FE82, 0x70880E4A, GetFuncAddr(&hook_CreateThread)        },
         { 0x4F0C77BA, 0x89DD7B71, GetFuncAddr(&hook_ExitThread)          },
         { 0xB439D7F0, 0xF97FF53F, GetFuncAddr(&hook_ExitProcess)         },
+        { 0x9F268655, 0x8D9EA26C, GetFuncAddr(&hook_msvcrt_getmainargs)  },
         { 0x4C88022B, 0xA9AA3D62, GetFuncAddr(&hook_msvcrt_wgetmainargs) },
         { 0xF1E55A4D, 0x9A112CBD, GetFuncAddr(&hook_msvcrt_exit)         },
     };
@@ -1133,12 +1147,6 @@ static errno ldr_exit_process(UINT uExitCode)
 {
     PELoader* loader = getPELoaderPointer();
 
-    // make callback about DLL_PROCESS_DETACH
-    if (loader->IsDLL)
-    {
-        pe_dll_main(DLL_PROCESS_DETACH, true);
-    }
-
     // call ExitProcess for terminate all threads
     errno errno = NO_ERROR;
     for (;;)
@@ -1156,6 +1164,12 @@ static errno ldr_exit_process(UINT uExitCode)
         loader->WaitForSingleObject(hThread, INFINITE);
         loader->CloseHandle(hThread);
         break;
+    }
+
+    // make callback about DLL_PROCESS_DETACH
+    if (loader->IsDLL)
+    {
+        pe_dll_main(DLL_PROCESS_DETACH, true);
     }
     return errno;
 }
@@ -1357,23 +1371,35 @@ void hook_ExitProcess(UINT uExitCode)
 
     dbg_log("[PE Loader]", "ExitProcess: %zu", uExitCode);
 
+    loader->ExitProcess(uExitCode);
+
+    ldr_tls_callback(DLL_PROCESS_DETACH);
+    clean_run_data();
+
     set_exit_code(uExitCode);
     set_running(false);
 
-    // execute TLS callback list before ExitProcess.
-    ldr_tls_callback(DLL_PROCESS_DETACH);
+    loader->ExitThread(0);
+}
 
-    loader->ExitProcess(uExitCode);
+__declspec(noinline)
+int hook_msvcrt_getmainargs(
+    int* argc, byte*** argv, byte*** env, int doWildCard, void* startInfo
+){
+    PELoader* loader = getPELoaderPointer();
+
+    dbg_log("[PE Loader]", "call msvcrt.__getmainargs");
+
+
 }
 
 __declspec(noinline)
 int hook_msvcrt_wgetmainargs(
     int* argc, uint16*** argv, uint16*** env, int doWildCard, void* startInfo
-)
-{
+){
     PELoader* loader = getPELoaderPointer();
 
-    dbg_log("[PE Loader]", "call __wgetmainargs");
+    dbg_log("[PE Loader]", "call msvcrt.__wgetmainargs");
 
     // find msvcrt.__wgetmainargs
 #ifdef _WIN64
@@ -1401,7 +1427,8 @@ int hook_msvcrt_wgetmainargs(
     }
     *argc = nArgc;
     *argv = nArgv;
-    // TODO call LocalFree about nArgv
+    // store pointer for free after exit process
+    loader->nArgvW = nArgv;
     return ret;
 }
 
@@ -1515,6 +1542,17 @@ static bool is_running()
         return false;
     }
     return running;
+}
+
+__declspec(noinline)
+static void clean_run_data()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    if (loader->nArgvW != NULL)
+    {
+        loader->LocalFree(loader->nArgvW);
+    }
 }
 
 __declspec(noinline)
