@@ -35,7 +35,7 @@ type Embed struct {
 }
 
 // NewEmbed is used to create image config with embed mode.
-func NewEmbed(image []byte, compress bool) *Embed {
+func NewEmbed(image []byte, compress bool) Image {
 	return &Embed{
 		Image:    image,
 		Compress: compress,
