@@ -7,6 +7,20 @@ import (
 	"github.com/bovarysme/lzss"
 )
 
+// disable compress
+// +-----------+----------+-------+
+// | mode flag | compress | image |
+// +-----------+----------+-------+
+// |   byte    |   bool   |  var  |
+// +-----------+----------+-------+
+
+// enable compress
+// +-----------+----------+----------+-----------------+-------+
+// | mode flag | compress | raw size | compressed size | image |
+// +-----------+----------+----------+-----------------+-------+
+// |   byte    |   bool   |  uint32  |     uint32      |  var  |
+// +-----------+----------+----------+-----------------+-------+
+
 const modeEmbed = 1
 
 const (
