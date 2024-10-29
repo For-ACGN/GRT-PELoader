@@ -1,15 +1,14 @@
 package loader
 
 import (
-	"crypto/rand"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestEmbed(t *testing.T) {
-	image := make([]byte, 512)
-	_, err := rand.Read(image[:256])
+	image, err := os.ReadFile("testdata/executable.dat")
 	require.NoError(t, err)
 
 	t.Run("enable compress", func(t *testing.T) {
@@ -28,6 +27,14 @@ func TestEmbed(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Greater(t, len(config), len(image))
+	})
+
+	t.Run("invalid PE image", func(t *testing.T) {
+		embed := NewEmbed([]byte{0x00, 0x01}, false)
+
+		config, err := embed.Encode()
+		require.EqualError(t, err, "invalid PE image: EOF")
+		require.Nil(t, config)
 	})
 
 	t.Run("mode", func(t *testing.T) {

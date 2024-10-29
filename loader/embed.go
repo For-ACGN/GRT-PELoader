@@ -2,7 +2,9 @@ package loader
 
 import (
 	"bytes"
+	"debug/pe"
 	"encoding/binary"
+	"fmt"
 
 	"github.com/bovarysme/lzss"
 )
@@ -44,6 +46,11 @@ func NewEmbed(image []byte, compress bool) Image {
 
 // Encode implement Image interface.
 func (e *Embed) Encode() ([]byte, error) {
+	// check PE image
+	_, err := pe.NewFile(bytes.NewReader(e.Image))
+	if err != nil {
+		return nil, fmt.Errorf("invalid PE image: %s", err)
+	}
 	config := bytes.NewBuffer(make([]byte, 0, 16))
 	// write the mode
 	config.WriteByte(modeEmbed)
@@ -57,7 +64,7 @@ func (e *Embed) Encode() ([]byte, error) {
 	// compress PE image
 	buf := bytes.NewBuffer(make([]byte, 0, len(e.Image)/2))
 	w := lzss.NewWriter(buf)
-	_, err := w.Write(e.Image)
+	_, err = w.Write(e.Image)
 	if err != nil {
 		return nil, err
 	}
