@@ -44,7 +44,7 @@ type Options struct {
 	StdError  uint64
 
 	// set Gleam-RT options, usually keep the default value.
-	Runtime *option.Options
+	Runtime option.Options
 }
 
 // CreateInstance is used to create instance from PE Loader template.
@@ -94,7 +94,7 @@ func CreateInstance(tpl []byte, arch int, image Image, opts *Options) ([]byte, e
 	default:
 		return nil, fmt.Errorf("invalid architecture: %d", arch)
 	}
-	tpl, err = option.Set(tpl, opts.Runtime)
+	tpl, err = option.Set(tpl, &opts.Runtime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set runtime option: %s", err)
 	}
