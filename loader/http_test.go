@@ -1,7 +1,6 @@
 package loader
 
 import (
-	"crypto/rand"
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
@@ -11,10 +10,6 @@ import (
 const testURL = "https://github.com/RSSU-Shellcode/GRT-PELoader"
 
 func TestHTTP(t *testing.T) {
-	image := make([]byte, 512)
-	_, err := rand.Read(image[:256])
-	require.NoError(t, err)
-
 	t.Run("common", func(t *testing.T) {
 		http := NewHTTP(testURL, nil)
 
