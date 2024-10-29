@@ -2,6 +2,7 @@ package loader
 
 import (
 	"bytes"
+	"net/url"
 	"time"
 )
 
@@ -35,11 +36,15 @@ func NewHTTP(url string, opts *HTTPOptions) Image {
 
 // Encode implement Image interface.
 func (f *HTTP) Encode() ([]byte, error) {
+	req, err := url.ParseRequestURI(f.URL)
+	if err != nil {
+		return nil, err
+	}
 	config := bytes.NewBuffer(make([]byte, 0, 64))
 	// write the mode
 	config.WriteByte(modeHTTP)
 	// write the URL
-	config.WriteString(stringToUTF16(f.URL + "\x00"))
+	config.WriteString(stringToUTF16(req.String() + "\x00"))
 	// TODO write the options
 	return config.Bytes(), nil
 }
