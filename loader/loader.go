@@ -26,8 +26,8 @@ type Image interface {
 	Mode() string
 }
 
-// Option contains options about create instance.
-type Option struct {
+// Options contains options about create instance.
+type Options struct {
 	// set the custom image name about the command line prefix.
 	ImageName string
 
@@ -48,7 +48,10 @@ type Option struct {
 }
 
 // CreateInstance is used to create instance from PE Loader template.
-func CreateInstance(tpl []byte, arch int, image Image, opts *Option) ([]byte, error) {
+func CreateInstance(tpl []byte, arch int, image Image, opts *Options) ([]byte, error) {
+	if opts == nil {
+		opts = new(Options)
+	}
 	// encode PE image configuration
 	config, err := image.Encode()
 	if err != nil {
