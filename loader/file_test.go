@@ -2,9 +2,9 @@ package loader
 
 import (
 	"crypto/rand"
-	"fmt"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ func TestFile(t *testing.T) {
 		config, err := file.Encode()
 		require.NoError(t, err)
 
-		fmt.Println(config)
+		spew.Dump(config)
 	})
 
 	t.Run("mode", func(t *testing.T) {
