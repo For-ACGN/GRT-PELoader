@@ -17,8 +17,8 @@ import (
 
 var (
 	tplDir  string
-	arch    int
 	mode    string
+	arch    int
 	pePath  string
 	cmdLine string
 	wait    bool
@@ -27,14 +27,14 @@ var (
 )
 
 func init() {
-	option.Flag(&options)
 	flag.StringVar(&tplDir, "tpl", "template", "set shellcode templates directory")
-	flag.IntVar(&arch, "arch", 0, "set shellcode template architecture")
 	flag.StringVar(&mode, "mode", "", "select load mode")
+	flag.IntVar(&arch, "arch", 0, "set shellcode template architecture")
 	flag.StringVar(&pePath, "pe", "", "set input PE file path")
 	flag.StringVar(&cmdLine, "cmd", "", "set command line for exe")
 	flag.BoolVar(&wait, "wait", false, "wait for shellcode to exit")
 	flag.StringVar(&outPath, "o", "output.bin", "set output file path")
+	option.Flag(&options)
 	flag.Parse()
 }
 

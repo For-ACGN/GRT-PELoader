@@ -1,1 +1,1 @@
-go build -v -trimpath -ldflags "-s -w" -o generator.exe main.go
+go build -v -trimpath -ldflags "-s -w" -o GRT-PELoader.exe main.go

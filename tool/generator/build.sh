@@ -1,1 +1,1 @@
-go build -v -trimpath -ldflags "-s -w" -o generator main.go
+go build -v -trimpath -ldflags "-s -w" -o GRT-PELoader main.go
