@@ -5,14 +5,12 @@
 
 typedef int (*getmainargs_t)
 (
-    int* argc, byte*** argv, byte*** env,
-    int doWildCard, void* startInfo
+    int* argc, byte*** argv, byte*** env, int doWildCard, void* startInfo
 );
 
 typedef int (*wgetmainargs_t)
 (
-    int* argc, uint16*** argv, uint16*** env,
-    int doWildCard, void* startInfo
+    int* argc, uint16*** argv, uint16*** env, int doWildCard, void* startInfo
 );
 
 #endif // MSVCRT_T_H
