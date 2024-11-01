@@ -142,12 +142,10 @@ void hook_ExitThread(DWORD dwExitCode);
 void hook_ExitProcess(UINT uExitCode);
 
 int hook_msvcrt_getmainargs(
-    int* argc, byte*** argv, byte*** env,
-    int doWildCard, void* startInfo
+    int* argc, byte*** argv, byte*** env, int doWildCard, void* startInfo
 );
 int hook_msvcrt_wgetmainargs(
-    int* argc, uint16*** argv, uint16*** env,
-    int doWildCard, void* startInfo
+    int* argc, uint16*** argv, uint16*** env, int doWildCard, void* startInfo
 );
 void hook_msvcrt_exit(int exitcode);
 
@@ -990,8 +988,8 @@ static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName)
         { 0x0465FE82, 0x70880E4A, GetFuncAddr(&hook_CreateThread)        },
         { 0x4F0C77BA, 0x89DD7B71, GetFuncAddr(&hook_ExitThread)          },
         { 0xB439D7F0, 0xF97FF53F, GetFuncAddr(&hook_ExitProcess)         },
-        { 0x9F268655, 0x8D9EA26C, GetFuncAddr(&hook_msvcrt_getmainargs)  },
-        { 0x4C88022B, 0xA9AA3D62, GetFuncAddr(&hook_msvcrt_wgetmainargs) },
+        // { 0xEC3DD822, 0x91377248, GetFuncAddr(&hook_msvcrt_getmainargs)  }, // TODO fix bug
+        // { 0x44C32027, 0x354751F7, GetFuncAddr(&hook_msvcrt_wgetmainargs) }, // TODO fix bug
         { 0xF1E55A4D, 0x9A112CBD, GetFuncAddr(&hook_msvcrt_exit)         },
     };
 #endif
@@ -1413,7 +1411,8 @@ int hook_msvcrt_getmainargs(
         return -1;
     }
 
-    // call original function to process other arguments
+    // call original function to process other arguments,
+    // argv and env must NOT free, it allocated by msvcrt
     int ret = getmainargs(argc, argv, env, doWildCard, startInfo);
     // parse and replace argc, argv
     for (;;)
@@ -1448,9 +1447,9 @@ int hook_msvcrt_getmainargs(
         *argv = (LPSTR*)nArgv;
         // store pointer for free after exit process
         loader->nArgv = nArgv;
+        dbg_log("[PE Loader]", "Argv Pointer: 0x%zX", nArgv);
         break;
     }
-    dbg_log("[PE Loader]", "Argv Pointer: 0x%zX\n", loader->nArgv);
 
     // free shell32.dll
     loader->FreeLibrary(hModule);
@@ -1470,8 +1469,8 @@ int hook_msvcrt_wgetmainargs(
     uint hash = 0x1C3CFAD70CBF5CC3;
     uint key  = 0x2443BB3D37654188;
 #elif _WIN32
-    uint hash = 0xA5C5AAB3;
-    uint key  = 0x3B5D5009;
+    uint hash = 0x44C32027;
+    uint key  = 0x354751F7;
 #endif
     wgetmainargs_t wgetmainargs = loader->Config.FindAPI(hash, key);
     if (wgetmainargs == NULL)
@@ -1488,7 +1487,8 @@ int hook_msvcrt_wgetmainargs(
         return -1;
     }
 
-    // call original function to process other arguments
+    // call original function to process other arguments,
+    // argv and env must NOT free, it allocated by msvcrt
     int ret = wgetmainargs(argc, argv, env, doWildCard, startInfo);
     // parse and replace argc, argv 
     uint16 empty[] = { 0x0000 };
@@ -1500,8 +1500,8 @@ int hook_msvcrt_wgetmainargs(
         *argv = nArgv;
         // store pointer for free after exit process
         loader->nArgv = nArgv;
+        dbg_log("[PE Loader]", "Argv Pointer: 0x%zX", nArgv);
     }
-    dbg_log("[PE Loader]", "Argv Pointer: 0x%zX\n", loader->nArgv);
 
     // free shell32.dll
     loader->FreeLibrary(hModule);
