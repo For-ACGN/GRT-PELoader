@@ -141,13 +141,13 @@ void stub_ExecuteThread(LPVOID lpParameter);
 void hook_ExitThread(DWORD dwExitCode);
 void hook_ExitProcess(UINT uExitCode);
 
-int hook_msvcrt_getmainargs(
+int __cdecl hook_msvcrt_getmainargs(
     int* argc, byte*** argv, byte*** env, int doWildCard, void* startInfo
 );
-int hook_msvcrt_wgetmainargs(
+int __cdecl hook_msvcrt_wgetmainargs(
     int* argc, uint16*** argv, uint16*** env, int doWildCard, void* startInfo
 );
-void hook_msvcrt_exit(int exitcode);
+void __cdecl hook_msvcrt_exit(int exitcode);
 
 PELoader_M* InitPELoader(Runtime_M* runtime, PELoader_Cfg* cfg)
 {
@@ -974,7 +974,7 @@ static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName)
         { 0x9B91E956B96D6389, 0xEBB723BF1CEE4569, GetFuncAddr(&hook_CreateThread)        },
         { 0x053D2B184D2AD724, 0x5DFCC08DACB101DD, GetFuncAddr(&hook_ExitThread)          },
         { 0x003837989C804A7A, 0x77BACCABEB6CE508, GetFuncAddr(&hook_ExitProcess)         },
-        { 0x8D91B93B7BFC89B4, 0x428A7543FADEEF29, GetFuncAddr(&hook_msvcrt_getmainargs) },
+        { 0x8D91B93B7BFC89B4, 0x428A7543FADEEF29, GetFuncAddr(&hook_msvcrt_getmainargs)  },
         { 0xB6627A6DDB0A9B1A, 0x729C834DB43EB70A, GetFuncAddr(&hook_msvcrt_wgetmainargs) },
         { 0x4B7D921A385FB3D2, 0xC579F5ED84E53139, GetFuncAddr(&hook_msvcrt_exit)         },
     };
@@ -988,8 +988,8 @@ static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName)
         { 0x0465FE82, 0x70880E4A, GetFuncAddr(&hook_CreateThread)        },
         { 0x4F0C77BA, 0x89DD7B71, GetFuncAddr(&hook_ExitThread)          },
         { 0xB439D7F0, 0xF97FF53F, GetFuncAddr(&hook_ExitProcess)         },
-        // { 0xEC3DD822, 0x91377248, GetFuncAddr(&hook_msvcrt_getmainargs)  }, // TODO fix bug
-        // { 0x44C32027, 0x354751F7, GetFuncAddr(&hook_msvcrt_wgetmainargs) }, // TODO fix bug
+        { 0xEC3DD822, 0x91377248, GetFuncAddr(&hook_msvcrt_getmainargs)  },
+        { 0x44C32027, 0x354751F7, GetFuncAddr(&hook_msvcrt_wgetmainargs) },
         { 0xF1E55A4D, 0x9A112CBD, GetFuncAddr(&hook_msvcrt_exit)         },
     };
 #endif
@@ -1381,7 +1381,7 @@ void hook_ExitProcess(UINT uExitCode)
 }
 
 __declspec(noinline)
-int hook_msvcrt_getmainargs(
+int __cdecl hook_msvcrt_getmainargs(
     int* argc, byte*** argv, byte*** env, int doWildCard, void* startInfo
 ){
     PELoader* loader = getPELoaderPointer();
@@ -1396,7 +1396,7 @@ int hook_msvcrt_getmainargs(
     uint hash = 0xE1E75000;
     uint key  = 0x14BEF388;
 #endif
-    getmainargs_t getmainargs = loader->Config.FindAPI(hash, key);
+    msvcrt_getmainargs_t getmainargs = loader->Config.FindAPI(hash, key);
     if (getmainargs == NULL)
     {
         return -1;
@@ -1457,7 +1457,7 @@ int hook_msvcrt_getmainargs(
 }
 
 __declspec(noinline)
-int hook_msvcrt_wgetmainargs(
+int __cdecl hook_msvcrt_wgetmainargs(
     int* argc, uint16*** argv, uint16*** env, int doWildCard, void* startInfo
 ){
     PELoader* loader = getPELoaderPointer();
@@ -1472,7 +1472,7 @@ int hook_msvcrt_wgetmainargs(
     uint hash = 0x44C32027;
     uint key  = 0x354751F7;
 #endif
-    wgetmainargs_t wgetmainargs = loader->Config.FindAPI(hash, key);
+    msvcrt_wgetmainargs_t wgetmainargs = loader->Config.FindAPI(hash, key);
     if (wgetmainargs == NULL)
     {
         return -1;
@@ -1509,7 +1509,7 @@ int hook_msvcrt_wgetmainargs(
 }
 
 __declspec(noinline)
-void hook_msvcrt_exit(int exitcode)
+void __cdecl hook_msvcrt_exit(int exitcode)
 {
     hook_ExitProcess((UINT)exitcode);
 }
