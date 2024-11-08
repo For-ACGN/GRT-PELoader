@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "test", "test\test.vcxproj",
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "builder", "builder\builder.vcxproj", "{FEF4F058-6BD3-4210-987B-AE40476241BA}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "sc_loader", "tool\sc_loader\sc_loader.vcxproj", "{7719A75E-66D0-4F15-8E82-2F57518464E7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Release|x64 = Release|x64
@@ -21,6 +23,10 @@ Global
 		{FEF4F058-6BD3-4210-987B-AE40476241BA}.Release|x64.Build.0 = Release|x64
 		{FEF4F058-6BD3-4210-987B-AE40476241BA}.Release|x86.ActiveCfg = Release|Win32
 		{FEF4F058-6BD3-4210-987B-AE40476241BA}.Release|x86.Build.0 = Release|Win32
+		{7719A75E-66D0-4F15-8E82-2F57518464E7}.Release|x64.ActiveCfg = Release|x64
+		{7719A75E-66D0-4F15-8E82-2F57518464E7}.Release|x64.Build.0 = Release|x64
+		{7719A75E-66D0-4F15-8E82-2F57518464E7}.Release|x86.ActiveCfg = Release|Win32
+		{7719A75E-66D0-4F15-8E82-2F57518464E7}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
