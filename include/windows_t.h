@@ -233,6 +233,17 @@ typedef HANDLE (*CreateFileA_t)
     DWORD dwFlagsAndAttributes, HANDLE hTemplateFile
 );
 
+typedef BOOL (*GetFileSizeEx_t)
+(
+    HANDLE hFile, LONGLONG* lpFileSize
+);
+
+typedef BOOL (*ReadFile_t)
+(
+    HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
+    DWORD* lpNumberOfBytesRead, POINTER lpOverlapped
+);
+
 typedef BOOL (*WriteFile_t)
 (
     HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
