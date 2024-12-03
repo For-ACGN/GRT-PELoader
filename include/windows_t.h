@@ -18,10 +18,9 @@ typedef bool BOOL;
 typedef uint SIZE_T;
 
 typedef void* POINTER;
-typedef void* HMODULE;
+typedef void* PVOID;
 typedef void* HANDLE;
 typedef void* FARPROC;
-typedef void* HLOCAL;
 
 typedef void*   LPVOID;
 typedef uint8*  LPSTR;
@@ -31,6 +30,10 @@ typedef HANDLE* LPHANDLE;
 typedef const void*   LPCVOID;
 typedef const uint8*  LPCSTR;
 typedef const uint16* LPCWSTR;
+
+typedef void* HMODULE;
+typedef void* HGLOBAL;
+typedef void* HLOCAL;
 
 #define MAX_PATH 260
 
