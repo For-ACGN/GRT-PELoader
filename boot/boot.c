@@ -45,10 +45,10 @@ PELoader_M* Boot()
         .Image        = NULL,
         .CommandLineA = NULL,
         .CommandLineW = NULL,
+        .WaitMain     = false,
         .StdInput     = NULL,
         .StdOutput    = NULL,
         .StdError     = NULL,
-        .WaitMain     = false,
 
         .NotEraseInstruction = options.NotEraseInstruction,
         .NotAdjustProtect    = options.NotAdjustProtect,
@@ -163,6 +163,15 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
     {
         return ERR_COMMAND_LINE_TOO_LONG;
     }
+    // load wait main, it must be true of false
+    if (!runtime->Argument.GetValue(ARG_IDX_WAIT_MAIN, &config->WaitMain, &size))
+    {
+        return ERR_NOT_FOUND_WAIT_MAIN;
+    }
+    if (size != sizeof(bool))
+    {
+        return ERR_INVALID_WAIT_MAIN;
+    }
     // load STD_INPUT_HANDLE, it can be zero
     if (!runtime->Argument.GetValue(ARG_IDX_STD_INPUT, &config->StdInput, &size))
     {
@@ -189,15 +198,6 @@ static errno loadConfig(Runtime_M* runtime, PELoader_Cfg* config)
     if (size != sizeof(HANDLE))
     {
         return ERR_INVALID_STD_ERROR;
-    }
-    // load wait main, it must be true of false
-    if (!runtime->Argument.GetValue(ARG_IDX_WAIT_MAIN, &config->WaitMain, &size))
-    {
-        return ERR_NOT_FOUND_WAIT_MAIN;
-    }
-    if (size != sizeof(bool))
-    {
-        return ERR_INVALID_WAIT_MAIN;
     }
     return NO_ERROR;
 }
@@ -231,12 +231,12 @@ static void* loadImageFromEmbed(Runtime_M* runtime, byte* config)
     config++;
     switch (mode)
     {
-    case 0: // without compression
+    case EMBED_DISABLE_COMPRESS:
         uint32 size = *(uint32*)config;
         void* buf = runtime->Memory.Alloc(size);
         mem_copy(buf, config + 4, size);
         return buf;
-    case 1: // use compression
+    case EMBED_ENABLE_COMPRESS:
         // TODO
         // runtime->Compressor.Decompress();
         return config;
@@ -279,6 +279,7 @@ static void* loadImageFromHTTP(Runtime_M* runtime, byte* config)
         SetLastErrno(ERR_INVALID_PE_IMAGE);
         return NULL;
     }
+    runtime->WinHTTP.Free();
     return resp.Body.Buf;
 }
 
@@ -287,10 +288,10 @@ static errno eraseArguments(Runtime_M* runtime)
     uint32 idx[] = 
     {
         ARG_IDX_PE_IMAGE,
+        ARG_IDX_WAIT_MAIN,
         ARG_IDX_STD_INPUT,
         ARG_IDX_STD_OUTPUT,
         ARG_IDX_STD_ERROR,
-        ARG_IDX_WAIT_MAIN,
     };
     bool success = true;
     for (int i = 0; i < arrlen(idx); i++)
