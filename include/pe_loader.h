@@ -12,47 +12,47 @@ typedef errno (*Exit_t)(uint exitCode);
 typedef errno (*Destroy_t)();
 
 typedef struct {
-    // use custom FindAPI from Gleam-RT for hook
+    // use custom FindAPI from Gleam-RT for hook.
     FindAPI_t FindAPI;
 
-    // PE image memory address
+    // PE image memory address.
     void* Image;
 
     // for hook GetCommandLineA and GetCommandLineW,
-    // if them are NULL, call original GetCommandLine
+    // if them are NULL, call original GetCommandLine.
     void* CommandLineA;
     void* CommandLineW;
 
+    // wait main thread exit if it is a exe image.
+    bool WaitMain;
+
     // set standard handles for hook GetStdHandle,
-    // if them are NULL, call original GetStdHandle
+    // if them are NULL, call original GetStdHandle.
     HANDLE StdInput;
     HANDLE StdOutput;
     HANDLE StdError;
 
-    // wait main thread exit if it is a exe image
-    bool WaitMain;
-
-    // not erase instructions after call functions about Init or Exit
+    // not erase instructions after call functions about Init or Exit.
     bool NotEraseInstruction;
 
-    // adjust current memory page protect
+    // adjust current memory page protect.
     bool NotAdjustProtect;
 } PELoader_Cfg;
 
 typedef struct {
-    // absolute memory address about PE entry point
+    // absolute memory address about PE entry point.
     void* EntryPoint;
 
-    // main thread return value or argument about call ExitProcess
+    // main thread return value or argument about call ExitProcess.
     uint ExitCode;
 
-    // create a thread at EntryPoint, it can call multi times
+    // create a thread at EntryPoint, it can call multi times.
     Execute_t Execute;
 
-    // release all resource, it can call multi times
+    // release all resource, it can call multi times.
     Exit_t Exit;
 
-    // destroy all resource about PE loader, it can only call one time
+    // destroy all resource about PE loader, it can only call one time.
     Destroy_t Destroy;
 } PELoader_M;
 
