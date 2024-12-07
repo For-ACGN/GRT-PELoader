@@ -19,10 +19,10 @@ func main() {
 		{0xFF, 0xFF, 0x00, 0x00}, // invalid PE image
 		[]byte(cmdlineA),         // command line ANSI
 		[]byte(cmdlineW),         // command line Unicode
-		make([]byte, 4),          // std input handle
-		make([]byte, 4),          // std output handle
-		make([]byte, 4),          // std error handle
-		{0x01},                   // wait main
+		{0x01},                   // wait main thread
+		make([]byte, 4),          // standard input handle
+		make([]byte, 4),          // standard output handle
+		make([]byte, 4),          // standard error handle
 	}
 	stub, err := argument.Encode(args...)
 	checkError(err)
@@ -37,10 +37,10 @@ func main() {
 		{0xFF, 0xFF, 0x00, 0x00}, // invalid PE image
 		[]byte(cmdlineA),         // command line ANSI
 		[]byte(cmdlineW),         // command line Unicode
-		make([]byte, 8),          // std input handle
-		make([]byte, 8),          // std output handle
-		make([]byte, 8),          // std error handle
-		{0x01},                   // wait main
+		{0x01},                   // wait main thread
+		make([]byte, 8),          // standard input handle
+		make([]byte, 8),          // standard output handle
+		make([]byte, 8),          // standard error handle
 	}
 	stub, err = argument.Encode(args...)
 	checkError(err)
