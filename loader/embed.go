@@ -10,11 +10,11 @@ import (
 )
 
 // disable compress
-// +-----------+----------+-------+
-// | mode flag | compress | image |
-// +-----------+----------+-------+
-// |   byte    |   bool   |  var  |
-// +-----------+----------+-------+
+// +-----------+----------+--------+-------+
+// | mode flag | compress |  size  | image |
+// +-----------+----------+--------+-------+
+// |   byte    |   bool   | uint32 |  var  |
+// +-----------+----------+--------+-------+
 
 // enable compress
 // +-----------+----------+----------+-----------------+-------+
@@ -54,8 +54,11 @@ func (e *Embed) Encode() ([]byte, error) {
 	config := bytes.NewBuffer(make([]byte, 0, 16))
 	// write the mode
 	config.WriteByte(modeEmbed)
+	// need use compress mode
 	if !e.Compress {
+		size := binary.LittleEndian.AppendUint32(nil, uint32(len(e.Image)))
 		config.WriteByte(disableCompress)
+		config.Write(size)
 		config.Write(e.Image)
 		return config.Bytes(), nil
 	}
