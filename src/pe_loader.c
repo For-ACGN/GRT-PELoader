@@ -58,11 +58,14 @@ typedef struct {
     uintptr ImageBase;
     uint32  ImageSize;
     uintptr Section;
-    bool    IsDLL;
 
     // store PE image NT header
     Image_FileHeader FileHeader;
     OptionalHeader   OptHeader;
+
+    // about characteristics
+    bool IsDLL;
+    bool IsFixed;
 
     // store TLS callback list
     TLSCallback_t* TLSList;
@@ -102,10 +105,10 @@ static errno loadPEImage(PELoader* loader);
 static bool  parsePEImage(PELoader* loader);
 static bool  checkPEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
-static void  prepareImportTable(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
 static bool  initDelayload(PELoader* loader);
 static bool  initTLSCallback(PELoader* loader);
+static void  prepareImportTable(PELoader* loader);
 static bool  backupPEImage(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
 
@@ -479,6 +482,12 @@ static bool parsePEImage(PELoader* loader)
     uintptr peBase = imageAddr + peOffset + NT_HEADER_SIGNATURE_SIZE;
     // parse FileHeader
     Image_FileHeader* fileHeader = (Image_FileHeader*)(peBase);
+    WORD characteristics = fileHeader->Characteristics;
+    // check is a executable image
+    if (!(characteristics & IMAGE_FILE_EXECUTABLE_IMAGE))
+    {
+        return false;
+    }
     // parse OptionalHeader
     uintptr headerAddr = peBase + sizeof(Image_FileHeader);
 #ifdef _WIN64
@@ -492,15 +501,15 @@ static bool parsePEImage(PELoader* loader)
     // calculate the address of the first Section
     uintptr section = headerAddr + sizeof(OptionalHeader);
     // store result
-    WORD characteristics = fileHeader->Characteristics;
     loader->DataDir    = dataDir;
     loader->EntryPoint = optHeader->AddressOfEntryPoint;
     loader->ImageBase  = optHeader->ImageBase;
     loader->ImageSize  = optHeader->SizeOfImage;
     loader->Section    = section;
-    loader->IsDLL      = (characteristics & IMAGE_FILE_DLL) != 0;
     loader->FileHeader = *fileHeader;
     loader->OptHeader  = *optHeader;
+    loader->IsDLL   = characteristics & IMAGE_FILE_DLL;
+    loader->IsFixed = characteristics & IMAGE_FILE_RELOCS_STRIPPED;
     return true;
 }
 
@@ -528,7 +537,12 @@ static bool mapSections(PELoader* loader)
     uint32 size = loader->ImageSize;
     size += (uint32)(RandUintN(seed, 128) * 4096);
     // allocate memory for write PE image 
-    void* mem = loader->VirtualAlloc(NULL, size, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    LPVOID base = NULL;
+    if (loader->IsFixed)
+    {
+        base = (LPVOID)(loader->OptHeader.ImageBase);
+    }
+    void* mem = loader->VirtualAlloc(base, size, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (mem == NULL)
     {
         return false;
@@ -560,15 +574,61 @@ static bool mapSections(PELoader* loader)
     return true;
 }
 
-static void prepareImportTable(PELoader* loader)
+static bool fixRelocTable(PELoader* loader)
 {
+    if (loader->IsFixed)
+    {
+        return true;
+    }
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
-    uintptr ddAddr  = dataDir + IMAGE_DIRECTORY_ENTRY_IMPORT * PE_DATA_DIRECTORY_SIZE;
+    uintptr ddAddr  = dataDir + IMAGE_DIRECTORY_ENTRY_BASERELOC * PE_DATA_DIRECTORY_SIZE;
     Image_DataDirectory dd = *(Image_DataDirectory*)(ddAddr);
-
-    loader->ImportTable     = peImage + dd.VirtualAddress;
-    loader->ImportTableSize = dd.Size;
+    uintptr relocTable = peImage + dd.VirtualAddress;
+    uint32  tableSize  = dd.Size;
+    // check need relocation
+    if (tableSize == 0)
+    {
+        return true;
+    }
+    void*  tableAddr  = (void*)relocTable; // for erase table after
+    uint64 addrOffset = (int64)(loader->PEImage) - (int64)(loader->ImageBase);
+    for (;;)
+    {
+        Image_BaseRelocation* baseReloc = (Image_BaseRelocation*)(relocTable);
+        if (baseReloc->VirtualAddress == 0)
+        {
+            break;
+        }
+        uintptr relocPtr = relocTable + 8;
+        uintptr dstAddr  = peImage + baseReloc->VirtualAddress;
+        for (uint32 i = 0; i < (baseReloc->SizeOfBlock - 8) / 2; i++)
+        {
+            Image_Reloc reloc = *(Image_Reloc*)(relocPtr);
+            uint32* patchAddr32;
+            uint64* patchAddr64;
+            switch (reloc.Type)
+            {
+            case IMAGE_REL_BASED_ABSOLUTE:
+                break;
+            case IMAGE_REL_BASED_HIGHLOW:
+                patchAddr32 = (uint32*)(dstAddr + reloc.Offset);
+                *patchAddr32 += (uint32)(addrOffset);
+                break;
+            case IMAGE_REL_BASED_DIR64:
+                patchAddr64 = (uint64*)(dstAddr + reloc.Offset);
+                *patchAddr64 += (uint64)(addrOffset);
+                break;
+            default:
+                return false;
+            }
+            relocPtr += sizeof(Image_Reloc);
+        }
+        relocTable += baseReloc->SizeOfBlock;
+    }
+    // destroy table for prevent extract raw PE image
+    RandBuffer(tableAddr, tableSize);
+    return true;
 }
 
 static bool initDelayload(PELoader* loader)
@@ -644,59 +704,6 @@ static bool initDelayload(PELoader* loader)
     return true;
 }
 
-static bool fixRelocTable(PELoader* loader)
-{
-    uintptr peImage = loader->PEImage;
-    uintptr dataDir = loader->DataDir;
-    uintptr ddAddr  = dataDir + IMAGE_DIRECTORY_ENTRY_BASERELOC * PE_DATA_DIRECTORY_SIZE;
-    Image_DataDirectory dd = *(Image_DataDirectory*)(ddAddr);
-    uintptr relocTable = peImage + dd.VirtualAddress;
-    uint32  tableSize  = dd.Size;
-    // check need relocation
-    if (tableSize == 0)
-    {
-        return true;
-    }
-    void*  tableAddr  = (void*)relocTable; // for erase table after
-    uint64 addrOffset = (int64)(loader->PEImage) - (int64)(loader->ImageBase);
-    for (;;)
-    {
-        Image_BaseRelocation* baseReloc = (Image_BaseRelocation*)(relocTable);
-        if (baseReloc->VirtualAddress == 0)
-        {
-            break;
-        }
-        uintptr relocPtr = relocTable + 8;
-        uintptr dstAddr  = peImage + baseReloc->VirtualAddress;
-        for (uint32 i = 0; i < (baseReloc->SizeOfBlock - 8) / 2; i++)
-        {
-            Image_Reloc reloc = *(Image_Reloc*)(relocPtr);
-            uint32* patchAddr32;
-            uint64* patchAddr64;
-            switch (reloc.Type)
-            {
-            case IMAGE_REL_BASED_ABSOLUTE:
-                break;
-            case IMAGE_REL_BASED_HIGHLOW:
-                patchAddr32 = (uint32*)(dstAddr + reloc.Offset);
-                *patchAddr32 += (uint32)(addrOffset);
-                break;
-            case IMAGE_REL_BASED_DIR64:
-                patchAddr64 = (uint64*)(dstAddr + reloc.Offset);
-                *patchAddr64 += (uint64)(addrOffset);
-                break;
-            default:
-                return false;
-            }
-            relocPtr += sizeof(Image_Reloc);
-        }
-        relocTable += baseReloc->SizeOfBlock;
-    }
-    // destroy table for prevent extract raw PE image
-    RandBuffer(tableAddr, tableSize);
-    return true;
-}
-
 static bool initTLSCallback(PELoader* loader)
 {
     uintptr peImage = loader->PEImage;
@@ -715,6 +722,17 @@ static bool initTLSCallback(PELoader* loader)
     // destroy table for prevent extract raw PE image
     RandBuffer((byte*)tlsTable, tableSize);
     return true;
+}
+
+static void prepareImportTable(PELoader* loader)
+{
+    uintptr peImage = loader->PEImage;
+    uintptr dataDir = loader->DataDir;
+    uintptr ddAddr  = dataDir + IMAGE_DIRECTORY_ENTRY_IMPORT * PE_DATA_DIRECTORY_SIZE;
+    Image_DataDirectory dd = *(Image_DataDirectory*)(ddAddr);
+
+    loader->ImportTable     = peImage + dd.VirtualAddress;
+    loader->ImportTableSize = dd.Size;
 }
 
 // backupPEImage is used to execute PE image multi times.
@@ -1369,9 +1387,8 @@ void hook_ExitProcess(UINT uExitCode)
 
     dbg_log("[PE Loader]", "ExitProcess: %zu", uExitCode);
 
-    loader->ExitProcess(uExitCode);
-
     ldr_tls_callback(DLL_PROCESS_DETACH);
+    loader->ExitProcess(uExitCode);
     clean_run_data();
 
     set_exit_code(uExitCode);
