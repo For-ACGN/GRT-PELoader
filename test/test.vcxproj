@@ -15,7 +15,8 @@
     <ClInclude Include="test.h" />
     <ClInclude Include="..\include\c_types.h" />
     <ClInclude Include="..\include\windows_t.h" />
-	<ClInclude Include="..\include\msvcrt_t.h" />
+    <ClInclude Include="..\include\msvcrt_t.h" />
+    <ClInclude Include="..\include\ucrtbase_t.h" />
     <ClInclude Include="..\include\pe_image.h" />
     <ClInclude Include="..\include\rel_addr.h" />
     <ClInclude Include="..\include\lib_memory.h" />
