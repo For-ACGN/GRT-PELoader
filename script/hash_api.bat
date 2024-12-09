@@ -27,11 +27,16 @@ hash_api -fmt 64 -conc -func LocalFree
 hash_api -fmt 64 -conc -func GetStdHandle
 hash_api -fmt 64 -conc -func ExitProcess
 
-hash_api -fmt 64 -conc -mod shell32.dll -func CommandLineToArgvW
+hash_api -fmt 64 -conc -mod "shell32.dll" -func CommandLineToArgvW
 
-hash_api -fmt 64 -conc -mod msvcrt.dll -func __getmainargs
-hash_api -fmt 64 -conc -mod msvcrt.dll -func __wgetmainargs
-hash_api -fmt 64 -conc -mod msvcrt.dll -func exit
+hash_api -fmt 64 -conc -mod "msvcrt.dll" -func __getmainargs
+hash_api -fmt 64 -conc -mod "msvcrt.dll" -func __wgetmainargs
+hash_api -fmt 64 -conc -mod "msvcrt.dll" -func exit
+
+hash_api -fmt 64 -conc -mod "ucrtbase.dll" -func __p___argc
+hash_api -fmt 64 -conc -mod "ucrtbase.dll" -func __p___argv
+hash_api -fmt 64 -conc -mod "ucrtbase.dll" -func __p___wargv
+hash_api -fmt 64 -conc -mod "ucrtbase.dll" -func exit
 
 hash_api -fmt 64 -conc -func RT_GetArgValue
 hash_api -fmt 64 -conc -func RT_GetArgPointer
@@ -61,11 +66,16 @@ hash_api -fmt 32 -conc -func LocalFree
 hash_api -fmt 32 -conc -func GetStdHandle
 hash_api -fmt 32 -conc -func ExitProcess
 
-hash_api -fmt 32 -conc -mod shell32.dll -func CommandLineToArgvW
+hash_api -fmt 32 -conc -mod "shell32.dll" -func CommandLineToArgvW
 
-hash_api -fmt 32 -conc -mod msvcrt.dll -func __getmainargs
-hash_api -fmt 32 -conc -mod msvcrt.dll -func __wgetmainargs
-hash_api -fmt 32 -conc -mod msvcrt.dll -func exit
+hash_api -fmt 32 -conc -mod "msvcrt.dll" -func __getmainargs
+hash_api -fmt 32 -conc -mod "msvcrt.dll" -func __wgetmainargs
+hash_api -fmt 32 -conc -mod "msvcrt.dll" -func exit
+
+hash_api -fmt 32 -conc -mod "ucrtbase.dll" -func __p___argc
+hash_api -fmt 32 -conc -mod "ucrtbase.dll" -func __p___argv
+hash_api -fmt 32 -conc -mod "ucrtbase.dll" -func __p___wargv
+hash_api -fmt 32 -conc -mod "ucrtbase.dll" -func exit
 
 hash_api -fmt 32 -conc -func RT_GetArgValue
 hash_api -fmt 32 -conc -func RT_GetArgPointer
