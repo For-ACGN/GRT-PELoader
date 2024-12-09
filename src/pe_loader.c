@@ -70,8 +70,10 @@ typedef struct {
     // store TLS callback list
     TLSCallback_t* TLSList;
 
-    // store special caller memory
+    // store command line arguments;
+    int     nArgc;
     LPWSTR* nArgv;
+    LPSTR*  nArgv_w;
 
     // write return value
     uint* ExitCode;
@@ -132,6 +134,7 @@ static void set_running(bool run);
 static bool is_running();
 static void clean_run_data();
 
+// hooks about kernel32.dll
 LPSTR   hook_GetCommandLineA();
 LPWSTR  hook_GetCommandLineW();
 LPWSTR* hook_CommandLineToArgvW(LPCWSTR lpCmdLine, int* pNumArgs);
@@ -144,6 +147,7 @@ void stub_ExecuteThread(LPVOID lpParameter);
 void hook_ExitThread(DWORD dwExitCode);
 void hook_ExitProcess(UINT uExitCode);
 
+// hooks about msvcrt.dll
 int __cdecl hook_msvcrt_getmainargs(
     int* argc, byte*** argv, byte*** env, int doWildCard, void* startInfo
 );
@@ -151,6 +155,14 @@ int __cdecl hook_msvcrt_wgetmainargs(
     int* argc, uint16*** argv, uint16*** env, int doWildCard, void* startInfo
 );
 void __cdecl hook_msvcrt_exit(int exitcode);
+
+// hooks about ucrtbase.dll
+int*      __cdecl hook_ucrtbase_p_argc();
+byte***   __cdecl hook_ucrtbase_p_argv();
+uint16*** __cdecl hook_ucrtbase_p_wargv();
+void      __cdecl hook_ucrtbase_exit(int exitcode);
+
+HMODULE loadShell32DLL(PELoader* loader);
 
 PELoader_M* InitPELoader(Runtime_M* runtime, PELoader_Cfg* cfg)
 {
@@ -995,6 +1007,10 @@ static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName)
         { 0x8D91B93B7BFC89B4, 0x428A7543FADEEF29, GetFuncAddr(&hook_msvcrt_getmainargs)  },
         { 0xB6627A6DDB0A9B1A, 0x729C834DB43EB70A, GetFuncAddr(&hook_msvcrt_wgetmainargs) },
         { 0x4B7D921A385FB3D2, 0xC579F5ED84E53139, GetFuncAddr(&hook_msvcrt_exit)         },
+        { 0x677E9E5FFC09596F, 0xF0CDF0DC4A6693B0, GetFuncAddr(&hook_ucrtbase_p_argc)     },
+        { 0x348408E3C4C1F84A, 0x00D6384B5E49BE4E, GetFuncAddr(&hook_ucrtbase_p_argv)     },
+        { 0xE4963C275A179C3A, 0x56818722C1E69D4F, GetFuncAddr(&hook_ucrtbase_p_wargv)    },
+        { 0xD806168873719B4E, 0x477C6E75E8D61A35, GetFuncAddr(&hook_ucrtbase_exit)       },
     };
 #elif _WIN32
     {
@@ -1009,6 +1025,10 @@ static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName)
         { 0xEC3DD822, 0x91377248, GetFuncAddr(&hook_msvcrt_getmainargs)  },
         { 0x44C32027, 0x354751F7, GetFuncAddr(&hook_msvcrt_wgetmainargs) },
         { 0xF1E55A4D, 0x9A112CBD, GetFuncAddr(&hook_msvcrt_exit)         },
+        { 0x9E4AA9D4, 0xA97CC100, GetFuncAddr(&hook_ucrtbase_p_argc)     },
+        { 0x4029DD68, 0x4F1713D1, GetFuncAddr(&hook_ucrtbase_p_argv)     },
+        { 0x21EF5083, 0xA44FD76E, GetFuncAddr(&hook_ucrtbase_p_wargv)    },
+        { 0x1207ACD2, 0x8560B050, GetFuncAddr(&hook_ucrtbase_exit)       },
     };
 #endif
     for (int i = 0; i < arrlen(methods); i++)
@@ -1419,10 +1439,7 @@ int __cdecl hook_msvcrt_getmainargs(
         return -1;
     }
     // make sure shell32.dll is loaded
-    byte dllName[] = { 
-        's', 'h', 'e', 'l', 'l', '3', '2', '.', 'd', 'l', 'l', '\x00'
-    };
-    HMODULE hModule = loader->LoadLibraryA(dllName);
+    HMODULE hModule = loadShell32DLL(loader);
     if (hModule == NULL)
     {
         return -1;
@@ -1495,10 +1512,7 @@ int __cdecl hook_msvcrt_wgetmainargs(
         return -1;
     }
     // make sure shell32.dll is loaded
-    byte dllName[] = { 
-        's', 'h', 'e', 'l', 'l', '3', '2', '.', 'd', 'l', 'l', '\x00'
-    };
-    HMODULE hModule = loader->LoadLibraryA(dllName);
+    HMODULE hModule = loadShell32DLL(loader);
     if (hModule == NULL)
     {
         return -1;
@@ -1529,6 +1543,76 @@ __declspec(noinline)
 void __cdecl hook_msvcrt_exit(int exitcode)
 {
     hook_ExitProcess((UINT)exitcode);
+}
+
+int* __cdecl hook_ucrtbase_p_argc()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    dbg_log("[PE Loader]", "call ucrtbase.__p___argc");
+
+    // make sure shell32.dll is loaded
+    HMODULE hModule = loadShell32DLL(loader);
+    if (hModule == NULL)
+    {
+        return NULL;
+    }
+
+
+    // free shell32.dll
+    loader->FreeLibrary(hModule);
+}
+
+byte*** __cdecl hook_ucrtbase_p_argv()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    dbg_log("[PE Loader]", "call ucrtbase.__p___argv");
+
+    // make sure shell32.dll is loaded
+    HMODULE hModule = loadShell32DLL(loader);
+    if (hModule == NULL)
+    {
+        return NULL;
+    }
+
+
+
+    // free shell32.dll
+    loader->FreeLibrary(hModule);
+}
+
+uint16*** __cdecl hook_ucrtbase_p_wargv()
+{
+    PELoader* loader = getPELoaderPointer();
+
+    dbg_log("[PE Loader]", "call ucrtbase.__p___wargv");
+
+    // make sure shell32.dll is loaded
+    HMODULE hModule = loadShell32DLL(loader);
+    if (hModule == NULL)
+    {
+        return NULL;
+    }
+
+    // free shell32.dll
+    loader->FreeLibrary(hModule);
+
+
+}
+
+void __cdecl hook_ucrtbase_exit(int exitcode)
+{
+    hook_ExitProcess((UINT)exitcode);
+}
+
+__declspec(noinline)
+HMODULE loadShell32DLL(PELoader* loader)
+{
+    byte dllName[] = { 
+        's', 'h', 'e', 'l', 'l', '3', '2', '.', 'd', 'l', 'l', '\x00'
+    };
+    return loader->LoadLibraryA(dllName);
 }
 
 __declspec(noinline)
