@@ -68,6 +68,9 @@
     <ClInclude Include="..\include\msvcrt_t.h">
       <Filter>Header</Filter>
     </ClInclude>
+    <ClInclude Include="..\include\ucrtbase_t.h">
+      <Filter>Header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\errno.c">
