@@ -71,7 +71,7 @@ typedef struct {
     // store TLS callback list
     TLSCallback_t* TLSList;
 
-    // about command line arguments;
+    // about command line arguments
     int     argc;
     LPSTR*  argv_a;
     LPWSTR* argv_w;
@@ -1632,25 +1632,53 @@ void loadCommandLineToArgv(PELoader* loader)
         }
         dbg_log("[PE Loader]", "argv pointer: 0x%zX", argv);
 
-        // convert each argument from UTF16 to ANSI
-        // bool success = true;
-        // for (LPWSTR* p = nArgv; *p != NULL; p++)
-        // {
-        //     LPWSTR ptr = *p;
-        //     ANSI s = loader->Runtime->WinBase.UTF16ToANSI(ptr);
-        //     if (s == NULL)
-        //     {
-        //         success = false;
-        //         break;
-        //     }
-        //     strcpy_a((ANSI)ptr, s);
-        //     loader->Runtime->Memory.Free(s);
-        // }
-        
-        
+        // calculate the buffer size about argv
+        // add size of pointer array
+        uint size = ((uint)argc + 1) * sizeof(LPWSTR);
+        // add each argument string length
+        for (LPWSTR* p = argv; *p != NULL; p++)
+        {
+            size += (strlen_w(*p) + 1) * 2;
+        }
+
+        // copy buffer data that we can hide it
+        // otherwise, it will in the local heap
+        LPWSTR* argv_a = loader->Runtime->Memory.Alloc(size);
+        LPWSTR* argv_w = loader->Runtime->Memory.Alloc(size);
+        mem_copy(argv_a, argv, size);
+        mem_copy(argv_w, argv, size);
+
+        // fix the string pointers
+        uintptr offset = (uintptr)argv_a - (uintptr)argv;
+        for (LPWSTR* p = argv_a; *p != NULL; p++)
+        {
+            uintptr addr = (uintptr)(*p) + offset;
+            *p = (LPWSTR)addr;
+        }
+        offset = (uintptr)argv_w - (uintptr)argv;
+        for (LPWSTR* p = argv_w; *p != NULL; p++)
+        {
+            uintptr addr = (uintptr)(*p) + offset;
+            *p = (LPWSTR)addr;
+        }
+
+        // convert each argument from UTF16 to ANSI for argv_a
+        for (LPWSTR* p = argv_a; *p != NULL; p++)
+        {
+            LPWSTR ptr = *p;
+            ANSI s = loader->Runtime->WinBase.UTF16ToANSI(ptr);
+            if (s == NULL)
+            {
+                break;
+            }
+            strcpy_a((ANSI)ptr, s);
+            loader->Runtime->Memory.Free(s);
+        }
+        LPSTR* argv_n = (LPSTR*)argv_a;
 
         loader->argc   = argc;
-        loader->argv_w = argv;
+        loader->argv_a = argv_n;
+        loader->argv_w = argv_w;
         break;
     }
 
@@ -1774,18 +1802,10 @@ static void clean_run_data()
 {
     PELoader* loader = getPELoaderPointer();
 
-    // TODO replace it to free
-    if (loader->argv_a != NULL)
-    {
-        // loader->LocalFree(loader->argv_a);
-        loader->argv_a = NULL;
-    }
-    if (loader->argv_w != NULL)
-    {
-        // loader->LocalFree(loader->argv_w);
-        loader->argv_w = NULL;
-    }
-    loader->argc = 0;
+    // reset command line arguments
+    loader->argc   = 0;
+    loader->argv_a = NULL;
+    loader->argv_w = NULL;
 }
 
 __declspec(noinline)
