@@ -1443,43 +1443,18 @@ int __cdecl hook_msvcrt_getmainargs(
     // call original function to process other arguments,
     // argv and env must NOT free, it allocated by msvcrt
     int ret = getmainargs(argc, argv, env, doWildCard, startInfo);
-    // parse and replace argc, argv
-    for (;;)
+    if (ret == -1)
     {
-        uint16 empty[] = { 0x0000 };
-        int nArgc = 0;
-        LPWSTR* nArgv = hook_CommandLineToArgvW(empty, &nArgc);
-        if (nArgv == NULL)
-        {
-            break;
-        }
-        // convert each argument from UTF16 to ANSI
-        bool success = true;
-        for (LPWSTR* p = nArgv; *p != NULL; p++)
-        {
-            LPWSTR ptr = *p;
-            ANSI s = loader->Runtime->WinBase.UTF16ToANSI(ptr);
-            if (s == NULL)
-            {
-                success = false;
-                break;
-            }
-            strcpy_a((ANSI)ptr, s);
-            loader->Runtime->Memory.Free(s);
-        }
-        if (!success)
-        {
-            ret = -1;
-            break;
-        }
-        *argc = nArgc;
-        *argv = (LPSTR*)nArgv;
-        // store pointer for free after exit process
-        loader->argv_a = nArgv;
-        dbg_log("[PE Loader]", "Argv Pointer: 0x%zX", nArgv);
-        break;
+        return ret;
     }
 
+    // hijack the return value about argc and argv
+    loadCommandLineToArgv(loader);
+    if (loader->argc != 0)
+    {
+        *argc = loader->argc;
+        *argv = loader->argv_a;
+    }
     return ret;
 }
 
@@ -1505,13 +1480,21 @@ int __cdecl hook_msvcrt_wgetmainargs(
         return -1;
     }
 
-
     // call original function to process other arguments,
     // argv and env must NOT free, it allocated by msvcrt
     int ret = wgetmainargs(argc, argv, env, doWildCard, startInfo);
+    if (ret == -1)
+    {
+        return ret;
+    }
 
-
-
+    // hijack the return value about argc and argv
+    loadCommandLineToArgv(loader);
+    if (loader->argc != 0)
+    {
+        *argc = loader->argc;
+        *argv = loader->argv_w;
+    }
     return ret;
 }
 
@@ -1639,15 +1622,43 @@ void loadCommandLineToArgv(PELoader* loader)
     }
 
     int argc = 0;
-    LPWSTR* argv = hook_CommandLineToArgvW(cmdLine, &argc);
-    if (argv != NULL)
+    LPWSTR* argv;
+    for (;;)
     {
+        argv = hook_CommandLineToArgvW(cmdLine, &argc);
+        if (argv == NULL)
+        {
+            break;
+        }
+        dbg_log("[PE Loader]", "argv pointer: 0x%zX", argv);
+
+        // convert each argument from UTF16 to ANSI
+        // bool success = true;
+        // for (LPWSTR* p = nArgv; *p != NULL; p++)
+        // {
+        //     LPWSTR ptr = *p;
+        //     ANSI s = loader->Runtime->WinBase.UTF16ToANSI(ptr);
+        //     if (s == NULL)
+        //     {
+        //         success = false;
+        //         break;
+        //     }
+        //     strcpy_a((ANSI)ptr, s);
+        //     loader->Runtime->Memory.Free(s);
+        // }
+        
+        
 
         loader->argc   = argc;
         loader->argv_w = argv;
+        break;
     }
-    dbg_log("[PE Loader]", "argv pointer: 0x%zX", argv);
 
+    // free memory from CommandLineToArgvW
+    if (argv != NULL)
+    {
+        loader->LocalFree(argv);
+    }
     // free shell32.dll
     loader->FreeLibrary(hModule);
 }
@@ -1766,12 +1777,12 @@ static void clean_run_data()
     // TODO replace it to free
     if (loader->argv_a != NULL)
     {
-        loader->LocalFree(loader->argv_a);
+        // loader->LocalFree(loader->argv_a);
         loader->argv_a = NULL;
     }
     if (loader->argv_w != NULL)
     {
-        loader->LocalFree(loader->argv_w);
+        // loader->LocalFree(loader->argv_w);
         loader->argv_w = NULL;
     }
     loader->argc = 0;
