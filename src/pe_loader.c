@@ -70,10 +70,10 @@ typedef struct {
     // store TLS callback list
     TLSCallback_t* TLSList;
 
-    // store command line arguments;
-    int     nArgc;
-    LPWSTR* nArgv;
-    LPSTR*  nArgv_w;
+    // about command line arguments;
+    int     argc;
+    LPSTR*  argv_a;
+    LPWSTR* argv_w;
 
     // write return value
     uint* ExitCode;
@@ -162,7 +162,7 @@ byte***   __cdecl hook_ucrtbase_p_argv();
 uint16*** __cdecl hook_ucrtbase_p_wargv();
 void      __cdecl hook_ucrtbase_exit(int exitcode);
 
-HMODULE loadShell32DLL(PELoader* loader);
+void loadCommandLineToArgv(PELoader* loader);
 
 PELoader_M* InitPELoader(Runtime_M* runtime, PELoader_Cfg* cfg)
 {
@@ -1438,12 +1438,6 @@ int __cdecl hook_msvcrt_getmainargs(
     {
         return -1;
     }
-    // make sure shell32.dll is loaded
-    HMODULE hModule = loadShell32DLL(loader);
-    if (hModule == NULL)
-    {
-        return -1;
-    }
 
     // call original function to process other arguments,
     // argv and env must NOT free, it allocated by msvcrt
@@ -1480,13 +1474,11 @@ int __cdecl hook_msvcrt_getmainargs(
         *argc = nArgc;
         *argv = (LPSTR*)nArgv;
         // store pointer for free after exit process
-        loader->nArgv = nArgv;
+        loader->argv_a = nArgv;
         dbg_log("[PE Loader]", "Argv Pointer: 0x%zX", nArgv);
         break;
     }
 
-    // free shell32.dll
-    loader->FreeLibrary(hModule);
     return ret;
 }
 
@@ -1511,31 +1503,14 @@ int __cdecl hook_msvcrt_wgetmainargs(
     {
         return -1;
     }
-    // make sure shell32.dll is loaded
-    HMODULE hModule = loadShell32DLL(loader);
-    if (hModule == NULL)
-    {
-        return -1;
-    }
+
 
     // call original function to process other arguments,
     // argv and env must NOT free, it allocated by msvcrt
     int ret = wgetmainargs(argc, argv, env, doWildCard, startInfo);
-    // parse and replace argc, argv 
-    uint16 empty[] = { 0x0000 };
-    int nArgc = 0;
-    LPWSTR* nArgv = hook_CommandLineToArgvW(empty, &nArgc);
-    if (nArgv != NULL)
-    {
-        *argc = nArgc;
-        *argv = nArgv;
-        // store pointer for free after exit process
-        loader->nArgv = nArgv;
-        dbg_log("[PE Loader]", "Argv Pointer: 0x%zX", nArgv);
-    }
 
-    // free shell32.dll
-    loader->FreeLibrary(hModule);
+
+
     return ret;
 }
 
@@ -1551,16 +1526,8 @@ int* __cdecl hook_ucrtbase_p_argc()
 
     dbg_log("[PE Loader]", "call ucrtbase.__p___argc");
 
-    // make sure shell32.dll is loaded
-    HMODULE hModule = loadShell32DLL(loader);
-    if (hModule == NULL)
-    {
-        return NULL;
-    }
-
-
-    // free shell32.dll
-    loader->FreeLibrary(hModule);
+    loadCommandLineToArgv(loader);
+    return &loader->argc;
 }
 
 byte*** __cdecl hook_ucrtbase_p_argv()
@@ -1569,17 +1536,8 @@ byte*** __cdecl hook_ucrtbase_p_argv()
 
     dbg_log("[PE Loader]", "call ucrtbase.__p___argv");
 
-    // make sure shell32.dll is loaded
-    HMODULE hModule = loadShell32DLL(loader);
-    if (hModule == NULL)
-    {
-        return NULL;
-    }
-
-
-
-    // free shell32.dll
-    loader->FreeLibrary(hModule);
+    loadCommandLineToArgv(loader);
+    return &loader->argv_a;
 }
 
 uint16*** __cdecl hook_ucrtbase_p_wargv()
@@ -1588,17 +1546,8 @@ uint16*** __cdecl hook_ucrtbase_p_wargv()
 
     dbg_log("[PE Loader]", "call ucrtbase.__p___wargv");
 
-    // make sure shell32.dll is loaded
-    HMODULE hModule = loadShell32DLL(loader);
-    if (hModule == NULL)
-    {
-        return NULL;
-    }
-
-    // free shell32.dll
-    loader->FreeLibrary(hModule);
-
-
+    loadCommandLineToArgv(loader);
+    return &loader->argv_w;
 }
 
 void __cdecl hook_ucrtbase_exit(int exitcode)
@@ -1606,13 +1555,43 @@ void __cdecl hook_ucrtbase_exit(int exitcode)
     hook_ExitProcess((UINT)exitcode);
 }
 
-__declspec(noinline)
-HMODULE loadShell32DLL(PELoader* loader)
+void loadCommandLineToArgv(PELoader* loader)
 {
-    byte dllName[] = { 
+    LPWSTR cmdLine = loader->Config.CommandLineW;
+    if (cmdLine == NULL)
+    {
+        return;
+    }
+    if (loader->argv_w != NULL)
+    {
+        return;
+    }
+
+    // make sure shell32.dll is loaded
+    byte dllName[] = {
         's', 'h', 'e', 'l', 'l', '3', '2', '.', 'd', 'l', 'l', '\x00'
     };
-    return loader->LoadLibraryA(dllName);
+    HMODULE hModule = loader->LoadLibraryA(dllName);
+    if (hModule == NULL)
+    {
+        return;
+    }
+
+    int argc = 0;
+    LPWSTR* argv = hook_CommandLineToArgvW(cmdLine, &argc);
+    if (argv != NULL)
+    {
+
+
+
+
+        loader->argc   = argc;
+        loader->argv_w = argv;
+    }
+    dbg_log("[PE Loader]", "argv pointer: 0x%zX", argv);
+
+    // free shell32.dll
+    loader->FreeLibrary(hModule);
 }
 
 __declspec(noinline)
@@ -1726,9 +1705,16 @@ static void clean_run_data()
 {
     PELoader* loader = getPELoaderPointer();
 
-    if (loader->nArgv != NULL)
+    // TODO replace it to free
+    if (loader->argv_a != NULL)
     {
-        loader->LocalFree(loader->nArgv);
+        loader->LocalFree(loader->argv_a);
+        loader->argv_a = NULL;
+    }
+    if (loader->argv_w != NULL)
+    {
+        loader->LocalFree(loader->argv_w);
+        loader->argv_w = NULL;
     }
 }
 
