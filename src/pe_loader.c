@@ -68,6 +68,10 @@ typedef struct {
     bool IsDLL;
     bool IsFixed;
 
+    // store TLS data template
+    void* TLSBlock;
+    uint  TLSLen;
+
     // store TLS callback list
     TLSCallback_t* TLSList;
 
@@ -731,6 +735,19 @@ static bool initTLSCallback(PELoader* loader)
         return true;
     }
     Image_TLSDirectory* tls = (Image_TLSDirectory*)(tlsTable);
+    // allocate memory for copy template data
+    uint size  = tls->EndAddressOfRawData - tls->StartAddressOfRawData;
+    uint total = size + tls->SizeOfZeroFill;
+    void* block = loader->Runtime->Memory.Alloc(total);
+    if (block == NULL)
+    {
+        return false;
+    }
+    loader->TLSBlock = block;
+    loader->TLSLen   = total;
+    mem_copy(block, (void*)(tls->StartAddressOfRawData), size);
+    mem_init((void*)((uintptr)block + size), tls->SizeOfZeroFill);
+    // record tls callback list
     loader->TLSList = (TLSCallback_t*)(tls->AddressOfCallBacks);
     // destroy table for prevent extract raw PE image
     RandBuffer((byte*)tlsTable, tableSize);
@@ -1330,13 +1347,14 @@ HANDLE hook_CreateThread(
     dbg_log("[PE Loader]", "CreateThread: 0x%zX", lpStartAddress);
 
     // alloc memory for store actual StartAddress and Parameter
-    LPVOID para = loader->VirtualAlloc(NULL, 4096, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
-    if (para == NULL)
+    uint size = sizeof(createThreadCtx) + RandUintN((int64)lpParameter, 256);
+    LPVOID parameter = loader->Runtime->Memory.Alloc(size);
+    if (parameter == NULL)
     {
         return NULL;
     }
 
-    createThreadCtx* ctx = (createThreadCtx*)para;
+    createThreadCtx* ctx = (createThreadCtx*)parameter;
     ctx->lpStartAddress = lpStartAddress;
     ctx->lpParameter    = lpParameter;
 
@@ -1345,7 +1363,7 @@ HANDLE hook_CreateThread(
     HANDLE hThread = loader->CreateThread
     (
         lpThreadAttributes, dwStackSize, addr,
-        para, dwCreationFlags, lpThreadId
+        parameter, dwCreationFlags, lpThreadId
     );
     return hThread;
 }
@@ -1359,7 +1377,7 @@ void stub_ExecuteThread(LPVOID lpParameter)
     createThreadCtx* ctx = (createThreadCtx*)lpParameter;
     POINTER startAddress = ctx->lpStartAddress;
     LPVOID  parameter    = ctx->lpParameter;
-    loader->VirtualFree(lpParameter, 0, MEM_RELEASE);
+    loader->Runtime->Memory.Free(lpParameter);
 
     // execute TLS callback list before call function.
     if (loader->IsDLL)
@@ -1409,9 +1427,10 @@ void hook_ExitProcess(UINT uExitCode)
     dbg_log("[PE Loader]", "ExitProcess: %zu", uExitCode);
 
     ldr_tls_callback(DLL_PROCESS_DETACH);
-    loader->ExitProcess(uExitCode);
-    clean_run_data();
 
+    loader->ExitProcess(uExitCode);
+    
+    clean_run_data();
     set_exit_code(uExitCode);
     set_running(false);
 
