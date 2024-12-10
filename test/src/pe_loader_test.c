@@ -27,19 +27,22 @@ bool TestInitPELoader()
         return false;
     }
 
-    // read PE image file
+    // Read PE image file
+    LPSTR file;
 #ifdef _WIN64
-    LPSTR file = "testdata\\go_amd64.exe";
-    // LPSTR file = "testdata\\rust_x64.exe";
-    // LPSTR file = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.exe";
-    // LPSTR file = "C:\\Windows\\System32\\cmd.exe";
-    // LPSTR file = "E:\\Temp\\go_amd64.exe";
-    // LPSTR file = "E:\\Temp\\rust_x64.exe";
-    // LPSTR file = "E:\\Temp\\hash.exe";
+    file = "image\\x64\\ucrtbase_main.exe";
+    // file = "image\\x64\\ucrtbase_wmain.exe";
+    // file = "image\\go.exe";
+    // file = "E:\\Temp\\rust_x64.exe";
+    // file = "E:\\Temp\\rust_x64_gnu.exe";
 #elif _WIN32
-    LPSTR file = "testdata\\go_386.exe";
-    // LPSTR file = "testdata\\rust_x86.exe";
+    file = "image\\x86\\ucrtbase_main.exe";
+    // file = "image\\x86\\ucrtbase_wmain.exe";
+    // file = "image\\x86\\go.exe";
 #endif
+    // file = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\PowerShell.exe";
+    // file = "C:\\Windows\\System32\\cmd.exe";
+
     byte* buf; uint size;
     errno err = runtime->WinFile.ReadFileA(file, &buf, &size);
     if (err != NO_ERROR)
@@ -48,8 +51,10 @@ bool TestInitPELoader()
         return false;
     }
 
-    LPSTR  cmdLineA =  "loader.exe -p1 123 -p2 \"test\"";
-    LPWSTR cmdLineW = L"loader.exe -p1 123 -p2 \"test\"";
+    LPSTR  cmdLineA = NULL;
+    LPWSTR cmdLineW = NULL;
+    cmdLineA = "loader.exe -p1 123 -p2 \"test\"";
+    cmdLineW = L"loader.exe -p1 123 -p2 \"test\"";
 
     PELoader_Cfg cfg = {
     #ifdef NO_RUNTIME
@@ -61,10 +66,10 @@ bool TestInitPELoader()
         .Image        = buf,
         .CommandLineA = cmdLineA,
         .CommandLineW = cmdLineW,
+        .WaitMain     = false,
         .StdInput     = NULL,
         .StdOutput    = NULL,
         .StdError     = NULL,
-        .WaitMain     = true,
 
         .NotEraseInstruction = true,
         .NotAdjustProtect    = false,
