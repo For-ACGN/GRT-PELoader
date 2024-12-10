@@ -1,6 +1,7 @@
 #include "c_types.h"
 #include "windows_t.h"
 #include "msvcrt_t.h"
+#include "ucrtbase_t.h"
 #include "pe_image.h"
 #include "rel_addr.h"
 #include "lib_string.h"
@@ -1527,7 +1528,25 @@ int* __cdecl hook_ucrtbase_p_argc()
     dbg_log("[PE Loader]", "call ucrtbase.__p___argc");
 
     loadCommandLineToArgv(loader);
-    return &loader->argc;
+    if (loader->argc != 0)
+    {
+        return &loader->argc;
+    }
+
+    // call ucrtbase.__p___argc
+#ifdef _WIN64
+    uint hash = 0xADF700C69C846081;
+    uint key  = 0x164425A411FFA1EC;
+#elif _WIN32
+    uint hash = 0xDDB2351C;
+    uint key  = 0x2F7CAB87;
+#endif
+    ucrtbase_p_argc_t p_argc = loader->Config.FindAPI(hash, key);
+    if (p_argc == NULL)
+    {
+        return NULL;
+    }
+    return p_argc();
 }
 
 byte*** __cdecl hook_ucrtbase_p_argv()
@@ -1537,7 +1556,25 @@ byte*** __cdecl hook_ucrtbase_p_argv()
     dbg_log("[PE Loader]", "call ucrtbase.__p___argv");
 
     loadCommandLineToArgv(loader);
-    return &loader->argv_a;
+    if (loader->argc != 0)
+    {
+        return &loader->argv_a;
+    }
+
+    // call ucrtbase.__p___argv
+#ifdef _WIN64
+    uint hash = 0xC64ED1F8F1B1277C;
+    uint key  = 0xBDAD98E6C2B6C986;
+#elif _WIN32
+    uint hash = 0x4B6EA85E;
+    uint key  = 0x8E47E1D6;
+#endif
+    ucrtbase_p_argv_t p_argv = loader->Config.FindAPI(hash, key);
+    if (p_argv == NULL)
+    {
+        return NULL;
+    }
+    return p_argv();
 }
 
 uint16*** __cdecl hook_ucrtbase_p_wargv()
@@ -1547,7 +1584,25 @@ uint16*** __cdecl hook_ucrtbase_p_wargv()
     dbg_log("[PE Loader]", "call ucrtbase.__p___wargv");
 
     loadCommandLineToArgv(loader);
-    return &loader->argv_w;
+    if (loader->argc != 0)
+    {
+        return &loader->argv_w;
+    }
+
+    // call ucrtbase.__p___wargv
+#ifdef _WIN64
+    uint hash = 0xC89A5BF3DB908890;
+    uint key  = 0xF5124C295B193B2F;
+#elif _WIN32
+    uint hash = 0x020C7D19;
+    uint key  = 0x0FCC5CEA;
+#endif
+    ucrtbase_p_wargv_t p_wargv = loader->Config.FindAPI(hash, key);
+    if (p_wargv == NULL)
+    {
+        return NULL;
+    }
+    return p_wargv();
 }
 
 void __cdecl hook_ucrtbase_exit(int exitcode)
@@ -1555,14 +1610,20 @@ void __cdecl hook_ucrtbase_exit(int exitcode)
     hook_ExitProcess((UINT)exitcode);
 }
 
+// if you only parse the command line parameters in the configuration
+// and not the current process, the size of the hook function will 
+// be larger, but if there are no command line parameters in the 
+// configuration, you can use the internal implementation in msvcrt 
+// or ucrtbase instead of loading shell32.dll.
 void loadCommandLineToArgv(PELoader* loader)
 {
-    LPWSTR cmdLine = loader->Config.CommandLineW;
-    if (cmdLine == NULL)
+    if (loader->argc != 0)
     {
         return;
     }
-    if (loader->argv_w != NULL)
+
+    LPWSTR cmdLine = loader->Config.CommandLineW;
+    if (cmdLine == NULL)
     {
         return;
     }
@@ -1581,9 +1642,6 @@ void loadCommandLineToArgv(PELoader* loader)
     LPWSTR* argv = hook_CommandLineToArgvW(cmdLine, &argc);
     if (argv != NULL)
     {
-
-
-
 
         loader->argc   = argc;
         loader->argv_w = argv;
@@ -1716,6 +1774,7 @@ static void clean_run_data()
         loader->LocalFree(loader->argv_w);
         loader->argv_w = NULL;
     }
+    loader->argc = 0;
 }
 
 __declspec(noinline)
