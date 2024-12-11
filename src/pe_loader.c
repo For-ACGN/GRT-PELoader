@@ -752,7 +752,8 @@ static bool initTLSDirectory(PELoader* loader)
     loader->TLSLen   = total;
     mem_copy(block, (void*)(tls->StartAddressOfRawData), size);
     mem_init((void*)((uintptr)block + size), tls->SizeOfZeroFill);
-    dbg_log("[PE Loader]", "TLS Block: 0x%zX", block);
+
+    dbg_log("[PE Loader]", "TLS block template: 0x%zX", block);
 
     // record tls callback list
     loader->TLSList = (TLSCallback_t*)(tls->AddressOfCallBacks);
@@ -1395,10 +1396,15 @@ void stub_ExecuteThread(LPVOID lpParameter)
         return;
     }
     mem_copy(tls, loader->TLSBlock, loader->TLSLen);
-    // replace the original the block address
-    __writegsqword(0x58, (uint)tls);
 
-    dbg_log("[PE Loader]", "Thread TLS Block: 0x%zX", tls);
+    // replace the original the block address
+#ifdef _WIN64
+    uintptr* tlsPtr = (uintptr*)(__readgsqword(0x58));
+#elif _WIN32
+    uintptr* tlsPtr = (uintptr*)(__readfsdword(0x2C));
+#endif
+    *tlsPtr = (uintptr)tls;
+    dbg_log("[PE Loader]", "replace TLS block: 0x%zX", tls);
 
     // execute TLS callback list before call function.
     if (loader->IsDLL)
@@ -1450,8 +1456,8 @@ void hook_ExitProcess(UINT uExitCode)
 
     dbg_log("[PE Loader]", "ExitProcess: %zu", uExitCode);
 
-    loader->Runtime->Thread.Sleep(11000000);
-
+    // TODO fix bug about TLS
+    loader->Runtime->Thread.Sleep(1000000);
 
     ldr_tls_callback(DLL_PROCESS_DETACH);
 
@@ -1744,9 +1750,6 @@ static void pe_entry_point()
 {
     PELoader* loader = getPELoaderPointer();
 
-    // execute TLS callback list before call EntryPoint.
-    ldr_tls_callback(DLL_PROCESS_ATTACH);
-
     // call EntryPoint usually is main.
     uint exitCode = ((uint(*)())(loader->EntryPoint))();
 
@@ -1900,8 +1903,11 @@ errno LDR_Execute()
             }
             break;
         }
-        // create thread at entry point
+        // change the running status
         set_running(true);
+        // execute TLS callback list before call EntryPoint.
+        ldr_tls_callback(DLL_PROCESS_ATTACH);
+        // create thread at entry point
         void* addr = GetFuncAddr(&pe_entry_point);
         HANDLE hThread = hook_CreateThread(NULL, 0, addr, NULL, 0, NULL);
         if (hThread == NULL)
