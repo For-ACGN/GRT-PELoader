@@ -114,7 +114,7 @@ static bool  checkPEImage(PELoader* loader);
 static bool  mapSections(PELoader* loader);
 static bool  fixRelocTable(PELoader* loader);
 static bool  initDelayload(PELoader* loader);
-static bool  initTLSCallback(PELoader* loader);
+static bool  initTLSDirectory(PELoader* loader);
 static void  prepareImportTable(PELoader* loader);
 static bool  backupPEImage(PELoader* loader);
 static bool  flushInstructionCache(PELoader* loader);
@@ -469,9 +469,9 @@ static errno loadPEImage(PELoader* loader)
     {
         return ERR_LOADER_INIT_DELAYLOAD;
     }
-    if (!initTLSCallback(loader))
+    if (!initTLSDirectory(loader))
     {
-        return ERR_LOADER_INIT_TLS_CALLBACK;
+        return ERR_LOADER_INIT_TLS_DIRECTORY;
     }
     prepareImportTable(loader);
     dbg_log("[PE Loader]", "PE Image: 0x%zX", loader->PEImage);
@@ -650,6 +650,8 @@ static bool fixRelocTable(PELoader* loader)
 
 static bool initDelayload(PELoader* loader)
 {
+    Runtime_M* runtime = loader->Runtime;
+
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
     uintptr ddAddr  = dataDir + IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT * PE_DATA_DIRECTORY_SIZE;
@@ -671,13 +673,13 @@ static bool initDelayload(PELoader* loader)
         }
         // check the target DLL is loaded
         LPSTR  dllName  = (LPSTR)(peImage + dld->DllNameRVA);
-        LPWSTR dllNameW = loader->Runtime->WinBase.ANSIToUTF16(dllName);
+        LPWSTR dllNameW = runtime->WinBase.ANSIToUTF16(dllName);
         if (dllNameW == NULL)
         {
             return false;
         }
         HMODULE hModule = GetModuleHandle(dllNameW);
-        loader->Runtime->Memory.Free(dllNameW);
+        runtime->Memory.Free(dllNameW);
         if (hModule == NULL)
         {
             hModule = loader->LoadLibraryA(dllName);
@@ -721,8 +723,10 @@ static bool initDelayload(PELoader* loader)
     return true;
 }
 
-static bool initTLSCallback(PELoader* loader)
+static bool initTLSDirectory(PELoader* loader)
 {
+    Runtime_M* runtime = loader->Runtime;
+
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
     uintptr ddAddr  = dataDir + IMAGE_DIRECTORY_ENTRY_TLS * PE_DATA_DIRECTORY_SIZE;
@@ -735,10 +739,11 @@ static bool initTLSCallback(PELoader* loader)
         return true;
     }
     Image_TLSDirectory* tls = (Image_TLSDirectory*)(tlsTable);
+
     // allocate memory for copy template data
     uint size  = tls->EndAddressOfRawData - tls->StartAddressOfRawData;
     uint total = size + tls->SizeOfZeroFill;
-    void* block = loader->Runtime->Memory.Alloc(total);
+    void* block = runtime->Memory.Alloc(total);
     if (block == NULL)
     {
         return false;
@@ -747,8 +752,11 @@ static bool initTLSCallback(PELoader* loader)
     loader->TLSLen   = total;
     mem_copy(block, (void*)(tls->StartAddressOfRawData), size);
     mem_init((void*)((uintptr)block + size), tls->SizeOfZeroFill);
+    dbg_log("[PE Loader]", "TLS Block: 0x%zX", block);
+
     // record tls callback list
     loader->TLSList = (TLSCallback_t*)(tls->AddressOfCallBacks);
+
     // destroy table for prevent extract raw PE image
     RandBuffer((byte*)tlsTable, tableSize);
     return true;
@@ -1340,15 +1348,15 @@ __declspec(noinline)
 HANDLE hook_CreateThread(
     POINTER lpThreadAttributes, SIZE_T dwStackSize, POINTER lpStartAddress,
     LPVOID lpParameter, DWORD dwCreationFlags, DWORD* lpThreadId
-)
-{
-    PELoader* loader = getPELoaderPointer();
+){
+    PELoader*  loader  = getPELoaderPointer();
+    Runtime_M* runtime = loader->Runtime;
 
     dbg_log("[PE Loader]", "CreateThread: 0x%zX", lpStartAddress);
 
     // alloc memory for store actual StartAddress and Parameter
     uint size = sizeof(createThreadCtx) + RandUintN((int64)lpParameter, 256);
-    LPVOID parameter = loader->Runtime->Memory.Alloc(size);
+    LPVOID parameter = runtime->Memory.Alloc(size);
     if (parameter == NULL)
     {
         return NULL;
@@ -1371,13 +1379,26 @@ HANDLE hook_CreateThread(
 __declspec(noinline)
 void stub_ExecuteThread(LPVOID lpParameter)
 {
-    PELoader* loader = getPELoaderPointer();
+    PELoader*  loader  = getPELoaderPointer();
+    Runtime_M* runtime = loader->Runtime;
 
     // copy arguments from context 
     createThreadCtx* ctx = (createThreadCtx*)lpParameter;
     POINTER startAddress = ctx->lpStartAddress;
     LPVOID  parameter    = ctx->lpParameter;
-    loader->Runtime->Memory.Free(lpParameter);
+    runtime->Memory.Free(lpParameter);
+
+    // prepare TLS block data
+    void* tls = runtime->Memory.Alloc(loader->TLSLen);
+    if (tls == NULL)
+    {
+        return;
+    }
+    mem_copy(tls, loader->TLSBlock, loader->TLSLen);
+    // replace the original the block address
+    __writegsqword(0x58, (uint)tls);
+
+    dbg_log("[PE Loader]", "Thread TLS Block: 0x%zX", tls);
 
     // execute TLS callback list before call function.
     if (loader->IsDLL)
@@ -1397,6 +1418,9 @@ void stub_ExecuteThread(LPVOID lpParameter)
     } else {
         ldr_tls_callback(DLL_THREAD_DETACH);
     }
+
+    // free TLS block data
+    runtime->Memory.Free(tls);
 
     loader->ExitThread(0);
 }
@@ -1425,6 +1449,9 @@ void hook_ExitProcess(UINT uExitCode)
     PELoader* loader = getPELoaderPointer();
 
     dbg_log("[PE Loader]", "ExitProcess: %zu", uExitCode);
+
+    loader->Runtime->Thread.Sleep(11000000);
+
 
     ldr_tls_callback(DLL_PROCESS_DETACH);
 
@@ -1619,6 +1646,8 @@ void __cdecl hook_ucrtbase_exit(int exitcode)
 // or ucrtbase instead of loading shell32.dll.
 void loadCommandLineToArgv(PELoader* loader)
 {
+    Runtime_M* runtime = loader->Runtime;
+
     if (loader->argc != 0)
     {
         return;
@@ -1662,8 +1691,8 @@ void loadCommandLineToArgv(PELoader* loader)
 
         // copy buffer data that we can hide it
         // otherwise, it will in the local heap
-        LPWSTR* argv_a = loader->Runtime->Memory.Alloc(size);
-        LPWSTR* argv_w = loader->Runtime->Memory.Alloc(size);
+        LPWSTR* argv_a = runtime->Memory.Alloc(size);
+        LPWSTR* argv_w = runtime->Memory.Alloc(size);
         mem_copy(argv_a, argv, size);
         mem_copy(argv_w, argv, size);
 
@@ -1685,13 +1714,13 @@ void loadCommandLineToArgv(PELoader* loader)
         for (LPWSTR* p = argv_a; *p != NULL; p++)
         {
             LPWSTR ptr = *p;
-            ANSI s = loader->Runtime->WinBase.UTF16ToANSI(ptr);
+            ANSI s = runtime->WinBase.UTF16ToANSI(ptr);
             if (s == NULL)
             {
                 break;
             }
             strcpy_a((ANSI)ptr, s);
-            loader->Runtime->Memory.Free(s);
+            runtime->Memory.Free(s);
         }
         LPSTR* argv_n = (LPSTR*)argv_a;
 
@@ -1874,7 +1903,7 @@ errno LDR_Execute()
         // create thread at entry point
         set_running(true);
         void* addr = GetFuncAddr(&pe_entry_point);
-        HANDLE hThread = loader->CreateThread(NULL, 0, addr, NULL, 0, NULL);
+        HANDLE hThread = hook_CreateThread(NULL, 0, addr, NULL, 0, NULL);
         if (hThread == NULL)
         {
             errno = ERR_LOADER_CREATE_MAIN_THREAD;
