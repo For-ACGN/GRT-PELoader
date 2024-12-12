@@ -551,16 +551,17 @@ static bool checkPEImage(PELoader* loader)
 
 static bool mapSections(PELoader* loader)
 {
-    // append random memory size to image tail
-    uint64 seed = (uint64)(GetFuncAddr(&InitPELoader));
-    uint32 size = loader->ImageSize;
-    size += (uint32)((1 + RandUintN(seed, 128)) * 4096);
-    // allocate memory for write PE image 
+    // select the memory page address
     LPVOID base = NULL;
     if (loader->IsFixed)
     {
         base = (LPVOID)(loader->OptHeader.ImageBase);
     }
+    // append random memory size to image tail
+    uint64 seed = (uint64)(GetFuncAddr(&InitPELoader));
+    uint32 size = loader->ImageSize;
+    size += (uint32)((1 + RandUintN(seed, 128)) * 4096);
+    // allocate memory for write PE image 
     void* mem = loader->VirtualAlloc(base, size, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (mem == NULL)
     {
@@ -727,8 +728,6 @@ static bool initDelayload(PELoader* loader)
 
 static bool initTLSDirectory(PELoader* loader)
 {
-    Runtime_M* runtime = loader->Runtime;
-
     uintptr peImage = loader->PEImage;
     uintptr dataDir = loader->DataDir;
     uintptr ddAddr  = dataDir + IMAGE_DIRECTORY_ENTRY_TLS * PE_DATA_DIRECTORY_SIZE;
@@ -746,13 +745,23 @@ static bool initTLSDirectory(PELoader* loader)
     // the first 16 bytes for store original TLS address and align
     uint size  = tls->EndAddressOfRawData - tls->StartAddressOfRawData;
     uint total = 16 + size + tls->SizeOfZeroFill;
-    void* block = runtime->Memory.Alloc(total);
+    // allocate memory for write PE image
+    uint  pSize = total + (uint)((1 + RandUintN((uint64)tls, 8)) * 4096);
+    void* block = loader->VirtualAlloc(NULL, pSize, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     if (block == NULL)
     {
         return false;
     }
+    RandBuffer(block, (int64)size);
     loader->TLSBlock = block;
     loader->TLSLen   = total;
+#ifndef NO_RUNTIME
+    // lock memory region with special argument for reuse PE image
+    if (!loader->VirtualLock(block, 0))
+    {
+        return false;
+    }
+#endif // NO_RUNTIME
     uintptr start = (uintptr)block + 16;
     mem_copy((void*)(start), (void*)(tls->StartAddressOfRawData), size);
     mem_init((void*)(start + size), tls->SizeOfZeroFill);
@@ -898,6 +907,7 @@ static errno cleanPELoader(PELoader* loader)
     void* memPage  = loader->MainMemPage;
     void* peImage  = (void*)(loader->PEImage);
     void* peBackup = loader->PEBackup;
+    void* tlsBlock = loader->TLSBlock;
 
     if (virtualUnlock != NULL)
     {
@@ -915,6 +925,14 @@ static errno cleanPELoader(PELoader* loader)
             if (!virtualUnlock(peBackup, 0) && errno == NO_ERROR)
             {
                 errno = ERR_LOADER_UNLOCK_BACKUP;
+            }
+        }
+        // unlock memory page for TLS block template
+        if (tlsBlock != NULL)
+        {
+            if (!virtualUnlock(tlsBlock, 0) && errno == NO_ERROR)
+            {
+                errno = ERR_LOADER_UNLOCK_TLS_BLOCK;
             }
         }
         // unlock main memory page for structure
@@ -935,7 +953,7 @@ static errno cleanPELoader(PELoader* loader)
             RandBuffer(peImage, loader->ImageSize);
             if (!virtualFree(peImage, 0, MEM_RELEASE) && errno == NO_ERROR)
             {
-                errno = ERR_LOADER_CLEAN_FREE_PE;
+                errno = ERR_LOADER_FREE_PE_IMAGE;
             }
         }
         // release memory page for PE image backup
@@ -944,7 +962,16 @@ static errno cleanPELoader(PELoader* loader)
             RandBuffer(peBackup, loader->ImageSize);
             if (!virtualFree(peBackup, 0, MEM_RELEASE) && errno == NO_ERROR)
             {
-                errno = ERR_LOADER_CLEAN_FREE_BAK;
+                errno = ERR_LOADER_FREE_BACKUP;
+            }
+        }
+        // release memory page for TLS block template
+        if (tlsBlock != NULL)
+        {
+            RandBuffer(tlsBlock, loader->TLSLen);
+            if (!virtualFree(tlsBlock, 0, MEM_RELEASE) && errno == NO_ERROR)
+            {
+                errno = ERR_LOADER_FREE_TLS_BLOCK;
             }
         }
         // release main memory page
@@ -953,7 +980,7 @@ static errno cleanPELoader(PELoader* loader)
             RandBuffer(memPage, MAIN_MEM_PAGE_SIZE);
             if (!virtualFree(memPage, 0, MEM_RELEASE) && errno == NO_ERROR)
             {
-                errno = ERR_LOADER_CLEAN_FREE_MEM;
+                errno = ERR_LOADER_FREE_MAIN_MEM;
             }
         }
     }
@@ -1360,7 +1387,7 @@ HANDLE hook_CreateThread(
 
     // alloc memory for store actual StartAddress and Parameter
     uint size = sizeof(createThreadCtx);
-    size += RandUintN((int64)lpParameter, 256);
+    size += (1 + RandUintN((uint64)lpParameter, 4)) * 4096;
     LPVOID parameter = runtime->Memory.Alloc(size);
     if (parameter == NULL)
     {
