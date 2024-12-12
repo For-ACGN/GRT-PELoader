@@ -149,6 +149,7 @@ HANDLE  hook_CreateThread(
     LPVOID lpParameter, DWORD dwCreationFlags, DWORD* lpThreadId
 );
 void stub_ExecuteThread(LPVOID lpParameter);
+void free_TLSBlock(PELoader* loader);
 void hook_ExitThread(DWORD dwExitCode);
 void hook_ExitProcess(UINT uExitCode);
 
@@ -285,7 +286,8 @@ static void* allocPELoaderMemPage(PELoader_Cfg* cfg)
     {
         return NULL;
     }
-    SIZE_T size = MAIN_MEM_PAGE_SIZE + (1 + RandUintN(0, 16)) * 4096;
+    SIZE_T size = MAIN_MEM_PAGE_SIZE;
+    size += (1 + RandUintN(0, 16)) * 4096;
     LPVOID addr = virtualAlloc(NULL, size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     if (addr == NULL)
     {
@@ -552,7 +554,7 @@ static bool mapSections(PELoader* loader)
     // append random memory size to image tail
     uint64 seed = (uint64)(GetFuncAddr(&InitPELoader));
     uint32 size = loader->ImageSize;
-    size += (uint32)(RandUintN(seed, 128) * 4096);
+    size += (uint32)((1 + RandUintN(seed, 128)) * 4096);
     // allocate memory for write PE image 
     LPVOID base = NULL;
     if (loader->IsFixed)
@@ -741,8 +743,9 @@ static bool initTLSDirectory(PELoader* loader)
     Image_TLSDirectory* tls = (Image_TLSDirectory*)(tlsTable);
 
     // allocate memory for copy template data
+    // the first 16 bytes for store original TLS address and align
     uint size  = tls->EndAddressOfRawData - tls->StartAddressOfRawData;
-    uint total = size + tls->SizeOfZeroFill;
+    uint total = 16 + size + tls->SizeOfZeroFill;
     void* block = runtime->Memory.Alloc(total);
     if (block == NULL)
     {
@@ -750,9 +753,9 @@ static bool initTLSDirectory(PELoader* loader)
     }
     loader->TLSBlock = block;
     loader->TLSLen   = total;
-    mem_copy(block, (void*)(tls->StartAddressOfRawData), size);
-    mem_init((void*)((uintptr)block + size), tls->SizeOfZeroFill);
-
+    uintptr start = (uintptr)block + 16;
+    mem_copy((void*)(start), (void*)(tls->StartAddressOfRawData), size);
+    mem_init((void*)(start + size), tls->SizeOfZeroFill);
     dbg_log("[PE Loader]", "TLS block template: 0x%zX", block);
 
     // record tls callback list
@@ -780,7 +783,7 @@ static bool backupPEImage(PELoader* loader)
     // append random memory size to tail
     uint64 seed = (uint64)(GetFuncAddr(&InitPELoader)) + 4096;
     uint32 size = loader->ImageSize;
-    size += (uint32)(RandUintN(seed, 128) * 4096);
+    size += (uint32)((1 + RandUintN(seed, 128)) * 4096);
     // allocate memory for write PE image
     void* mem = loader->VirtualAlloc(NULL, size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     if (mem == NULL)
@@ -1356,7 +1359,8 @@ HANDLE hook_CreateThread(
     dbg_log("[PE Loader]", "CreateThread: 0x%zX", lpStartAddress);
 
     // alloc memory for store actual StartAddress and Parameter
-    uint size = sizeof(createThreadCtx) + RandUintN((int64)lpParameter, 256);
+    uint size = sizeof(createThreadCtx);
+    size += RandUintN((int64)lpParameter, 256);
     LPVOID parameter = runtime->Memory.Alloc(size);
     if (parameter == NULL)
     {
@@ -1389,7 +1393,7 @@ void stub_ExecuteThread(LPVOID lpParameter)
     LPVOID  parameter    = ctx->lpParameter;
     runtime->Memory.Free(lpParameter);
 
-    // prepare TLS block data
+    // prepare TLS block data memory page
     void* tls = runtime->Memory.Alloc(loader->TLSLen);
     if (tls == NULL)
     {
@@ -1397,13 +1401,19 @@ void stub_ExecuteThread(LPVOID lpParameter)
     }
     mem_copy(tls, loader->TLSBlock, loader->TLSLen);
 
-    // replace the original the block address
+    // read the original TLS block address
 #ifdef _WIN64
     uintptr* tlsPtr = (uintptr*)(__readgsqword(0x58));
 #elif _WIN32
     uintptr* tlsPtr = (uintptr*)(__readfsdword(0x2C));
 #endif
-    *tlsPtr = (uintptr)tls;
+
+    // store the original TLS block address
+    uintptr block = *tlsPtr;
+    mem_copy(tls, &block, sizeof(tlsPtr));
+
+    // replace the original TLS block address
+    *tlsPtr = (uintptr)tls + 16;
     dbg_log("[PE Loader]", "replace TLS block: 0x%zX", tls);
 
     // execute TLS callback list before call function.
@@ -1414,21 +1424,33 @@ void stub_ExecuteThread(LPVOID lpParameter)
         ldr_tls_callback(DLL_THREAD_ATTACH);
     }
 
+    // execute the function
     func_entry_t entry = (func_entry_t)startAddress;
     entry(parameter);
 
-    // execute TLS callback list before exit thread.
-    if (loader->IsDLL)
-    {
-        pe_dll_main(DLL_THREAD_DETACH, false);
-    } else {
-        ldr_tls_callback(DLL_THREAD_DETACH);
-    }
+    hook_ExitThread(0);
+}
+
+__declspec(noinline)
+void free_TLSBlock(PELoader* loader)
+{
+    Runtime_M* runtime = loader->Runtime;
+
+    // read the hooked TLS block address
+#ifdef _WIN64
+    uintptr* tlsPtr = (uintptr*)(__readgsqword(0x58));
+#elif _WIN32
+    uintptr* tlsPtr = (uintptr*)(__readfsdword(0x2C));
+#endif
+
+    // read the original TLS block address
+    void* tls = (void*)(*tlsPtr - 16);
+
+    // restore the original TLS block address
+    *tlsPtr = *(uintptr*)tls;
 
     // free TLS block data
     runtime->Memory.Free(tls);
-
-    loader->ExitThread(0);
 }
 
 __declspec(noinline)
@@ -1436,7 +1458,7 @@ void hook_ExitThread(DWORD dwExitCode)
 {
     PELoader* loader = getPELoaderPointer();
 
-    dbg_log("[PE Loader]", "ExitThread");
+    dbg_log("[PE Loader]", "ExitThread: %d", dwExitCode);
 
     // execute TLS callback list befor call ExitThread.
     if (loader->IsDLL)
@@ -1445,6 +1467,7 @@ void hook_ExitThread(DWORD dwExitCode)
     } else {
         ldr_tls_callback(DLL_THREAD_DETACH);
     }
+    free_TLSBlock(loader);
 
     loader->ExitThread(dwExitCode);
 }
@@ -1456,10 +1479,15 @@ void hook_ExitProcess(UINT uExitCode)
 
     dbg_log("[PE Loader]", "ExitProcess: %zu", uExitCode);
 
-    // TODO fix bug about TLS
-    loader->Runtime->Thread.Sleep(1000000);
-
+    // execute TLS callback list befor call ExitThread.
+    if (loader->IsDLL)
+    {
+        pe_dll_main(DLL_THREAD_DETACH, false);
+    } else {
+        ldr_tls_callback(DLL_THREAD_DETACH);
+    }
     ldr_tls_callback(DLL_PROCESS_DETACH);
+    free_TLSBlock(loader);
 
     loader->ExitProcess(uExitCode);
     
