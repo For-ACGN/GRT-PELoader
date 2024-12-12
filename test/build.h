@@ -7,7 +7,7 @@
 
 // #define RELEASE_MODE
 // #define SHELLCODE_MODE
-// #define NO_RUNTIME
+#define NO_RUNTIME
 
 #ifdef SHELLCODE_MODE
     #define RELEASE_MODE
