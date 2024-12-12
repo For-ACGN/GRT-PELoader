@@ -127,6 +127,8 @@ static void* ldr_GetMethods(LPCWSTR module, LPCSTR lpProcName);
 static errno ldr_init_mutex();
 static bool  ldr_copy_image();
 static bool  ldr_process_import();
+static void  ldr_alloc_tls_block();
+static void  ldr_free_tls_block();
 static void  ldr_tls_callback(DWORD dwReason);
 static errno ldr_exit_process(UINT uExitCode);
 static void  ldr_epilogue();
@@ -149,7 +151,6 @@ HANDLE  hook_CreateThread(
     LPVOID lpParameter, DWORD dwCreationFlags, DWORD* lpThreadId
 );
 void stub_ExecuteThread(LPVOID lpParameter);
-void free_TLSBlock(PELoader* loader);
 void hook_ExitThread(DWORD dwExitCode);
 void hook_ExitProcess(UINT uExitCode);
 
@@ -545,7 +546,7 @@ static bool checkPEImage(PELoader* loader)
     {
         return false;
     }
-    dbg_log("[PE Loader]", "characteristics: 0x%X", FileHeader->Characteristics);
+    dbg_log("[PE Loader]", "Characteristics: 0x%X", FileHeader->Characteristics);
     return true;
 }
 
@@ -1201,6 +1202,72 @@ static bool ldr_process_import()
 }
 
 __declspec(noinline)
+static void ldr_alloc_tls_block()
+{
+    PELoader*  loader  = getPELoaderPointer();
+    Runtime_M* runtime = loader->Runtime;
+
+    if (loader->TLSBlock == NULL)
+    {
+        return;
+    }
+
+    // prepare TLS block data memory page
+    void* tls = runtime->Memory.Alloc(loader->TLSLen);
+    if (tls == NULL)
+    {
+        return;
+    }
+    mem_copy(tls, loader->TLSBlock, loader->TLSLen);
+
+    // read the original TLS block address
+#ifdef _WIN64
+    uintptr* tlsPtr = (uintptr*)(__readgsqword(0x58));
+#elif _WIN32
+    uintptr* tlsPtr = (uintptr*)(__readfsdword(0x2C));
+#endif
+
+    // store the original TLS block address
+    uintptr block = *tlsPtr;
+    mem_copy(tls, &block, sizeof(tlsPtr));
+
+    // replace the original TLS block address
+    *tlsPtr = (uintptr)tls + 16;
+
+    dbg_log("[PE Loader]", "allocate TLS block: 0x%zX", tls);
+}
+
+__declspec(noinline)
+static void ldr_free_tls_block()
+{
+    PELoader*  loader  = getPELoaderPointer();
+    Runtime_M* runtime = loader->Runtime;
+
+    if (loader->TLSBlock == NULL)
+    {
+        return;
+    }
+
+    // read the hooked TLS block address
+#ifdef _WIN64
+    uintptr* tlsPtr = (uintptr*)(__readgsqword(0x58));
+#elif _WIN32
+    uintptr* tlsPtr = (uintptr*)(__readfsdword(0x2C));
+#endif
+
+    // read the original TLS block address
+    void* tls = (void*)(*tlsPtr - 16);
+
+    // restore the original TLS block address
+    *tlsPtr = *(uintptr*)tls;
+
+    // free TLS block data
+    runtime->Memory.Free(tls);
+
+    dbg_log("[PE Loader]", "free TLS block: 0x%zX", tls);
+}
+
+__declspec(noinline)
 static void ldr_tls_callback(DWORD dwReason)
 {
     PELoader* loader = getPELoaderPointer();
@@ -1208,15 +1275,6 @@ static void ldr_tls_callback(DWORD dwReason)
     if (loader->TLSList == NULL)
     {
         return;
-    }
-
-    TLSCallback_t* list = loader->TLSList;
-    while (*list != NULL)
-    {
-        TLSCallback_t callback = (TLSCallback_t)(*list);
-        callback((HMODULE)(loader->PEImage), dwReason, NULL);
-        list++;
-        dbg_log("[PE Loader]", "call TLS callback: 0x%zX", callback);
     }
 
     switch (dwReason)
@@ -1233,6 +1291,15 @@ static void ldr_tls_callback(DWORD dwReason)
     case DLL_THREAD_DETACH:
         dbg_log("[PE Loader]", "call TLS callback with DLL_THREAD_DETACH");
         break;
+    }
+
+    TLSCallback_t* list = loader->TLSList;
+    while (*list != NULL)
+    {
+        TLSCallback_t callback = (TLSCallback_t)(*list);
+        callback((HMODULE)(loader->PEImage), dwReason, NULL);
+        list++;
+        dbg_log("[PE Loader]", "call TLS callback: 0x%zX", callback);
     }
 }
 
@@ -1420,30 +1487,8 @@ void stub_ExecuteThread(LPVOID lpParameter)
     LPVOID  parameter    = ctx->lpParameter;
     runtime->Memory.Free(lpParameter);
 
-    // prepare TLS block data memory page
-    void* tls = runtime->Memory.Alloc(loader->TLSLen);
-    if (tls == NULL)
-    {
-        return;
-    }
-    mem_copy(tls, loader->TLSBlock, loader->TLSLen);
-
-    // read the original TLS block address
-#ifdef _WIN64
-    uintptr* tlsPtr = (uintptr*)(__readgsqword(0x58));
-#elif _WIN32
-    uintptr* tlsPtr = (uintptr*)(__readfsdword(0x2C));
-#endif
-
-    // store the original TLS block address
-    uintptr block = *tlsPtr;
-    mem_copy(tls, &block, sizeof(tlsPtr));
-
-    // replace the original TLS block address
-    *tlsPtr = (uintptr)tls + 16;
-    dbg_log("[PE Loader]", "replace TLS block: 0x%zX", tls);
-
     // execute TLS callback list before call function.
+    ldr_alloc_tls_block();
     if (loader->IsDLL)
     {
         pe_dll_main(DLL_THREAD_ATTACH, false);
@@ -1456,28 +1501,6 @@ void stub_ExecuteThread(LPVOID lpParameter)
     entry(parameter);
 
     hook_ExitThread(0);
-}
-
-__declspec(noinline)
-void free_TLSBlock(PELoader* loader)
-{
-    Runtime_M* runtime = loader->Runtime;
-
-    // read the hooked TLS block address
-#ifdef _WIN64
-    uintptr* tlsPtr = (uintptr*)(__readgsqword(0x58));
-#elif _WIN32
-    uintptr* tlsPtr = (uintptr*)(__readfsdword(0x2C));
-#endif
-
-    // read the original TLS block address
-    void* tls = (void*)(*tlsPtr - 16);
-
-    // restore the original TLS block address
-    *tlsPtr = *(uintptr*)tls;
-
-    // free TLS block data
-    runtime->Memory.Free(tls);
 }
 
 __declspec(noinline)
@@ -1494,7 +1517,7 @@ void hook_ExitThread(DWORD dwExitCode)
     } else {
         ldr_tls_callback(DLL_THREAD_DETACH);
     }
-    free_TLSBlock(loader);
+    ldr_free_tls_block();
 
     loader->ExitThread(dwExitCode);
 }
@@ -1507,14 +1530,8 @@ void hook_ExitProcess(UINT uExitCode)
     dbg_log("[PE Loader]", "ExitProcess: %zu", uExitCode);
 
     // execute TLS callback list befor call ExitThread.
-    if (loader->IsDLL)
-    {
-        pe_dll_main(DLL_THREAD_DETACH, false);
-    } else {
-        ldr_tls_callback(DLL_THREAD_DETACH);
-    }
     ldr_tls_callback(DLL_PROCESS_DETACH);
-    free_TLSBlock(loader);
+    ldr_free_tls_block();
 
     loader->ExitProcess(uExitCode);
     
@@ -1805,6 +1822,10 @@ static void pe_entry_point()
 {
     PELoader* loader = getPELoaderPointer();
 
+    // execute TLS callback list before call EntryPoint.
+    ldr_alloc_tls_block();
+    ldr_tls_callback(DLL_PROCESS_ATTACH);
+
     // call EntryPoint usually is main.
     uint exitCode = ((uint(*)())(loader->EntryPoint))();
 
@@ -1960,11 +1981,9 @@ errno LDR_Execute()
         }
         // change the running status
         set_running(true);
-        // execute TLS callback list before call EntryPoint.
-        ldr_tls_callback(DLL_PROCESS_ATTACH);
         // create thread at entry point
         void* addr = GetFuncAddr(&pe_entry_point);
-        HANDLE hThread = hook_CreateThread(NULL, 0, addr, NULL, 0, NULL);
+        HANDLE hThread = loader->CreateThread(NULL, 0, addr, NULL, 0, NULL);
         if (hThread == NULL)
         {
             errno = ERR_LOADER_CREATE_MAIN_THREAD;
